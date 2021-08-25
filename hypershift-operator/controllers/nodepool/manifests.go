@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"fmt"
+	capiibmcloud "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
@@ -30,6 +31,37 @@ func machineHealthCheck(nodePool *hyperv1.NodePool, controlPlaneNamespace string
 			Namespace: controlPlaneNamespace,
 		},
 	}
+}
+
+func PowerVSMachineTemplate(infraName string, nodePool *hyperv1.NodePool, controlPlaneNamespace string) (*capiibmcloud.IBMPowerVSMachineTemplate, string) {
+
+	powerVSMachineTemplate := &capiibmcloud.IBMPowerVSMachineTemplate{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				nodePoolAnnotation: ctrlclient.ObjectKeyFromObject(nodePool).String(),
+			},
+			Namespace: controlPlaneNamespace,
+		},
+		Spec: capiibmcloud.IBMPowerVSMachineTemplateSpec{
+			Template: capiibmcloud.IBMPowerVSMachineTemplateResource{
+				Spec: capiibmcloud.IBMPowerVSMachineSpec{
+					ImageID: nodePool.Spec.Platform.IBMCloudPowerVS.ImageID,
+					Memory: nodePool.Spec.Platform.IBMCloudPowerVS.Memory,
+					NetworkID: nodePool.Spec.Platform.IBMCloudPowerVS.NetworkID,
+					ProcType: nodePool.Spec.Platform.IBMCloudPowerVS.ProcType,
+					Processors: nodePool.Spec.Platform.IBMCloudPowerVS.Processors,
+					ServiceInstanceID: nodePool.Spec.Platform.IBMCloudPowerVS.ServiceInstanceID,
+					SSHKey: nodePool.Spec.Platform.IBMCloudPowerVS.SSHKey,
+					SysType: nodePool.Spec.Platform.IBMCloudPowerVS.SysType,
+				},
+			},
+		},
+	}
+	specHash := hashStruct(powerVSMachineTemplate.Spec.Template.Spec)
+	powerVSMachineTemplate.SetName(fmt.Sprintf("%s-%s", nodePool.GetName(), specHash))
+
+	return powerVSMachineTemplate, specHash
 }
 
 func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, controlPlaneNamespace string) (*capiaws.AWSMachineTemplate, string) {

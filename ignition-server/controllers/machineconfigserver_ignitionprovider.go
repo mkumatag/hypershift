@@ -242,7 +242,9 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 			},
 			InitContainers: []corev1.Container{
 				{
-					Image: images["machine-config-operator"],
+					//TODO(mkumatag): Hardcoding the image till we get the multi-arch release images
+					//Image: images["machine-config-operator"],
+					Image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1f8bd386b142a81b5bb2ee7924944ec64eca0f28c6d0ef1a2a0e8e686571aa6d",
 					Name:  "machine-config-operator-bootstrap",
 					Command: []string{
 						"/bin/bash",
@@ -263,7 +265,9 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					},
 				},
 				{
-					Image:           images["cli"],
+					//TODO(mkumatag): Hardcoding the image till we get the multi-arch release images
+					//Image:           images["cli"],
+					Image:           "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:331a56453e3b992a74d14641ad5b0a096e636923b2d648d617e8a9ad541b98a7",
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Name:            "inject-custom-machine-configs",
 					Env: []corev1.EnvVar{
@@ -299,7 +303,9 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					},
 				},
 				{
-					Image:           images["machine-config-operator"],
+					//TODO(mkumatag): Hardcoding the image till we get the multi-arch release images
+					//Image:           images["machine-config-operator"],
+					Image:           "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1f8bd386b142a81b5bb2ee7924944ec64eca0f28c6d0ef1a2a0e8e686571aa6d",
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Name:            "machine-config-controller-bootstrap",
 					Command: []string{
@@ -325,7 +331,9 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 			},
 			Containers: []corev1.Container{
 				{
-					Image:           images["machine-config-operator"],
+					//TODO(mkumatag): Hardcoding the image till we get the multi-arch release images
+					//Image:           images["machine-config-operator"],
+					Image:           "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1f8bd386b142a81b5bb2ee7924944ec64eca0f28c6d0ef1a2a0e8e686571aa6d",
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Name:            "machine-config-server",
 					Command: []string{

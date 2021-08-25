@@ -202,7 +202,7 @@ const (
 )
 
 // PlatformType is a specific supported infrastructure provider.
-// +kubebuilder:validation:Enum=AWS;None;IBMCloud
+// +kubebuilder:validation:Enum=AWS;None;IBMCloud;PowerVS
 type PlatformType string
 
 const (
@@ -212,6 +212,8 @@ const (
 	NonePlatform PlatformType = "None"
 
 	IBMCloudPlatform PlatformType = "IBMCloud"
+
+	IBMCloudPowerVSPlatform PlatformType = "PowerVS"
 )
 
 type PlatformSpec struct {

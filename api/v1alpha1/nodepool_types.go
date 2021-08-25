@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	capiibmcloud "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -162,6 +163,9 @@ type NodePoolPlatform struct {
 	Type PlatformType `json:"type"`
 	// AWS is the configuration used when installing on AWS.
 	AWS *AWSNodePoolPlatform `json:"aws,omitempty"`
+
+	// IBMCloudPowerVS is the configuration used when installing on IBMCloud PowerVS.
+	IBMCloudPowerVS *capiibmcloud.IBMPowerVSMachineSpec `json:"ibmcloudpowervs,omitempty"`
 }
 
 // AWSNodePoolPlatform stores the configuration for a node pool

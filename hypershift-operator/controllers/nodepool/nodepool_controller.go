@@ -24,6 +24,7 @@ import (
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util/patch"
 	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
+	capiibmcloud "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
@@ -486,6 +487,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile AWSMachineTemplate: %w", err)
 		}
 		span.AddEvent("reconciled awsmachinetemplate", trace.WithAttributes(attribute.String("name", machineTemplate.GetName())))
+	case hyperv1.IBMCloudPowerVSPlatform:
+		machineTemplate, err = r.reconcilePowerVSMachineTemplate(ctx, nodePool, infraID, controlPlaneNamespace)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile AWSMachineTemplate: %w", err)
+		}
+		span.AddEvent("reconciled awsmachinetemplate", trace.WithAttributes(attribute.String("name", machineTemplate.GetName())))
 	}
 
 	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
@@ -585,6 +592,54 @@ func (r NodePoolReconciler) reconcileAWSMachineTemplate(ctx context.Context,
 	nodePool.Annotations[nodePoolAnnotationCurrentProviderConfig] = targetTemplateHash
 
 	return targetAWSMachineTemplate, nil
+}
+
+
+func (r *NodePoolReconciler) reconcilePowerVSMachineTemplate(ctx context.Context,
+	nodePool *hyperv1.NodePool, infraID, controlPlaneNamespace string) (ctrlclient.Object, error) {
+	log := ctrl.LoggerFrom(ctx)
+	// Get target template and hash.
+	targetIBMPowerVSMachineTemplate, targetTemplateHash := PowerVSMachineTemplate(infraID, nodePool, controlPlaneNamespace)
+
+	// Get current template and hash.
+	currentTemplateHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentProviderConfig]
+	currentIBMPowerVSMachineTemplate := &capiibmcloud.IBMPowerVSMachineTemplate{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-%s", nodePool.GetName(), currentTemplateHash),
+			Namespace: controlPlaneNamespace,
+		},
+	}
+	if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(currentIBMPowerVSMachineTemplate), currentIBMPowerVSMachineTemplate); err != nil && !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("error getting existing PowerVSMachineTemplate: %w", err)
+	}
+
+	// Template has not changed, return early.
+	// TODO(alberto): can we hash in a deterministic way so we could just compare hashes?
+	if equality.Semantic.DeepEqual(currentIBMPowerVSMachineTemplate.Spec.Template.Spec, targetIBMPowerVSMachineTemplate.Spec.Template.Spec) {
+		return currentIBMPowerVSMachineTemplate, nil
+	}
+
+	// Otherwise create new template.
+	log.Info("The IBMPowerVSMachineTemplate referenced by this NodePool has changed. Creating a new one")
+	if err := r.Create(ctx, targetIBMPowerVSMachineTemplate); err != nil {
+		return nil, fmt.Errorf("error creating new PowerVSMachineTemplate: %w", err)
+	}
+
+	// TODO (alberto): Create a mechanism to cleanup old machineTemplates.
+	// We can't just delete the old AWSMachineTemplate because
+	// this would break the rolling upgrade process since the MachineSet
+	// being scaled down is still referencing the old AWSMachineTemplate.
+	// May be consider one single template the whole NodePool lifecycle. Modify it in place
+	// and trigger rolling update by e.g annotating the machineDeployment.
+
+	// Store new template hash.
+	if nodePool.Annotations == nil {
+		nodePool.Annotations = make(map[string]string)
+	}
+	nodePool.Annotations[nodePoolAnnotationCurrentProviderConfig] = targetTemplateHash
+
+	return targetIBMPowerVSMachineTemplate, nil
 }
 
 func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.NodePool, CA, token []byte, ignEndpoint string) error {
