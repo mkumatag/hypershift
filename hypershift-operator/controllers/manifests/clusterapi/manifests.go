@@ -95,6 +95,42 @@ func CAPIProviderRoleBinding(controlPlaneNamespace string) *rbacv1.RoleBinding {
 	}
 }
 
+func CAPIIBMCloudPowerVSProviderDeployment(controlPlaneNamespace string) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "capibm-controller-manager",
+		},
+	}
+}
+
+func CAPIIBMCloudPowerVSProviderServiceAccount(controlPlaneNamespace string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "capibm-controller-manager",
+		},
+	}
+}
+
+func CAPIIBMCloudPowerVSProviderRole(controlPlaneNamespace string) *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "capibm-manager",
+		},
+	}
+}
+
+func CAPIIBMCloudPowerVSProviderRoleBinding(controlPlaneNamespace string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "capibm-manager",
+		},
+	}
+}
+
 func CAPIWebhooksTLSSecret(controlPlaneNamespace string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

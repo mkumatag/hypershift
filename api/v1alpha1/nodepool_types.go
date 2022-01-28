@@ -305,6 +305,21 @@ type KubevirtNodePoolPlatform struct {
 	NodeTemplate *capikubevirt.VirtualMachineTemplateSpec `json:"nodeTemplate,omitempty"`
 }
 
+// IBMCloudPowerVSNodePoolPlatform specifies the configuration of a NodePool when operating
+// on IBMCloudPowerVS.
+type IBMCloudPowerVSNodePoolPlatform struct {
+	// ServiceInstanceID is the ServiceInstance to use for control plane cloud resources.
+	ServiceInstanceID string `json:"serviceInstanceID"`
+
+	// Image
+	Image *IBMCloudPowerVSResourceReference `json:"image"`
+
+	// Subnet is the subnet to use for control plane cloud resources.
+	//
+	// +optional
+	Subnet *IBMCloudPowerVSResourceReference `json:"subnet,omitempty"`
+}
+
 // AWSNodePoolPlatform specifies the configuration of a NodePool when operating
 // on AWS.
 type AWSNodePoolPlatform struct {

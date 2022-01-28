@@ -32,3 +32,30 @@ func KubeadminPasswordSecret(hostedClusterNamespace string, hostedClusterName st
 		},
 	}
 }
+
+func IBMCloudPowerVSKubeCloudControllerCreds(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "provider-creds",
+		},
+	}
+}
+
+func IBMCloudPowerVSNodePoolManagementCreds(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "node-provider-creds",
+		},
+	}
+}
+
+func IBMCloudPowerVSControlPlaneOperatorCreds(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "cpo-provider-creds",
+		},
+	}
+}

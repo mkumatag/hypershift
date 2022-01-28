@@ -485,10 +485,82 @@ spec:
                   ibmcloud:
                     description: IBMCloud defines IBMCloud specific settings for components
                     properties:
+                      controlPlaneOperatorCreds:
+                        description: "ControlPlaneOperatorCreds is a reference to
+                          a secret containing cloud credentials with permissions matching
+                          the control-plane-operator policy. The secret should have
+                          exactly one key, `credentials`, whose value is an AWS credentials
+                          file. \n TODO(dan): document the \"control plane operator
+                          policy\""
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                      ibmcloudpowervs:
+                        description: IBMCloudPowerVS specifies configuration for clusters
+                          running on IBM Cloud Power VS.
+                        properties:
+                          region:
+                            description: Region is the IBMCloud region in which the
+                              cluster resides. This configures the OCP control plane
+                              cloud integrations, and is used by NodePool to resolve
+                              the correct boot image for a given release.
+                            type: string
+                        required:
+                        - region
+                        type: object
+                      ibmcloudvpc:
+                        description: IBMCloudVPC specifies configuration for clusters
+                          running on IBM Cloud VPC.
+                        type: object
+                      kubeCloudControllerCreds:
+                        description: "KubeCloudControllerCreds is a reference to a
+                          secret containing cloud credentials with permissions matching
+                          the cloud controller policy. The secret should have exactly
+                          one key, `credentials`, whose value is an AWS credentials
+                          file. \n TODO(dan): document the \"cloud controller policy\""
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                      nodePoolManagementCreds:
+                        description: "NodePoolManagementCreds is a reference to a
+                          secret containing cloud credentials with permissions matching
+                          the node pool management policy. The secret should have
+                          exactly one key, `credentials`, whose value is an AWS credentials
+                          file. \n TODO(dan): document the \"node pool management
+                          policy\""
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
                       providerType:
                         description: ProviderType is a specific supported infrastructure
                           provider within IBM Cloud.
                         type: string
+                    required:
+                    - controlPlaneOperatorCreds
+                    - kubeCloudControllerCreds
+                    - nodePoolManagementCreds
+                    type: object
+                  ibmcloudpowervs:
+                    description: IBMCloudPowerVS defines IBMCloudPowerVS specific
+                      settings for components
+                    properties:
+                      region:
+                        description: Region is the IBMCloud region in which the cluster
+                          resides. This configures the OCP control plane cloud integrations,
+                          and is used by NodePool to resolve the correct boot image
+                          for a given release.
+                        type: string
+                    required:
+                    - region
                     type: object
                   type:
                     description: Type is the type of infrastructure provider for the
@@ -499,6 +571,8 @@ spec:
                     - IBMCloud
                     - Agent
                     - KubeVirt
+                    - IBMCloudPowerVS
+                    - IBMCloudVPC
                     type: string
                 required:
                 - type
@@ -701,7 +775,7 @@ spec:
                       provider:
                         description: Provider defines the KMS provider
                         enum:
-                        - IBMCloud
+                        - IBMCloudPowerVS
                         - AWS
                         type: string
                     required:

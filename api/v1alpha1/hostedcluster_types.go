@@ -396,7 +396,7 @@ const (
 
 // PlatformType is a specific supported infrastructure provider.
 //
-// +kubebuilder:validation:Enum=AWS;None;IBMCloud;Agent;KubeVirt
+// +kubebuilder:validation:Enum=AWS;None;IBMCloud;Agent;KubeVirt;IBMCloudPowerVS;IBMCloudVPC
 type PlatformType string
 
 const (
@@ -414,6 +414,12 @@ const (
 
 	// KubevirtPlatform represents Kubevirt infrastructure.
 	KubevirtPlatform PlatformType = "KubeVirt"
+
+	// IBMCloudVPCPlatform represents IBM Cloud infrastructure.
+	IBMCloudVPCPlatform PlatformType = "IBMCloudVPC"
+
+	// IBMCloudPowerVSPlatform represents IBM Cloud Power VS infrastructure.
+	IBMCloudPowerVSPlatform PlatformType = "IBMCloudPowerVS"
 )
 
 // PlatformSpec specifies the underlying infrastructure provider for the cluster
@@ -439,6 +445,9 @@ type PlatformSpec struct {
 
 	// IBMCloud defines IBMCloud specific settings for components
 	IBMCloud *IBMCloudPlatformSpec `json:"ibmcloud,omitempty"`
+
+	// IBMCloudPowerVS defines IBMCloudPowerVS specific settings for components
+	IBMCloudPowerVS *IBMCloudPowerVSPlatformSpec `json:"ibmcloudpowervs,omitempty"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.
@@ -451,6 +460,48 @@ type AgentPlatformSpec struct {
 type IBMCloudPlatformSpec struct {
 	// ProviderType is a specific supported infrastructure provider within IBM Cloud.
 	ProviderType configv1.IBMCloudProviderType `json:"providerType,omitempty"`
+
+	// KubeCloudControllerCreds is a reference to a secret containing cloud
+	// credentials with permissions matching the cloud controller policy. The
+	// secret should have exactly one key, `credentials`, whose value is an AWS
+	// credentials file.
+	//
+	// TODO(dan): document the "cloud controller policy"
+	//
+	// +immutable
+	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
+
+	// NodePoolManagementCreds is a reference to a secret containing cloud
+	// credentials with permissions matching the node pool management policy. The
+	// secret should have exactly one key, `credentials`, whose value is an AWS
+	// credentials file.
+	//
+	// TODO(dan): document the "node pool management policy"
+	//
+	// +immutable
+	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
+
+	// ControlPlaneOperatorCreds is a reference to a secret containing cloud
+	// credentials with permissions matching the control-plane-operator policy.
+	// The secret should have exactly one key, `credentials`, whose value is
+	// an AWS credentials file.
+	//
+	// TODO(dan): document the "control plane operator policy"
+	//
+	// +immutable
+	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`
+
+	// IBMCloudVPC specifies configuration for clusters running on IBM Cloud VPC.
+	//
+	// +optional
+	// +immutable
+	IBMCloudVPC *IBMCloudVPCPlatformSpec `json:"ibmcloudvpc,omitempty"`
+
+	// IBMCloudPowerVS specifies configuration for clusters running on IBM Cloud Power VS.
+	//
+	// +optional
+	// +immutable
+	IBMCloudPowerVS *IBMCloudPowerVSPlatformSpec `json:"ibmcloudpowervs,omitempty"`
 }
 
 // AWSCloudProviderConfig specifies AWS networking configuration.
@@ -577,6 +628,61 @@ type AWSPlatformSpec struct {
 	// +kubebuilder:default=Public
 	// +optional
 	EndpointAccess AWSEndpointAccessType `json:"endpointAccess,omitempty"`
+}
+
+// IBMCloudVPCPlatformSpec specifies configuration for clusters running on IBMCloud VPC.
+type IBMCloudVPCPlatformSpec struct {
+}
+
+// IBMCloudPowerVSPlatformSpec specifies configuration for clusters running on IBMCloud Power VS.
+type IBMCloudPowerVSPlatformSpec struct {
+	// IBMCloudPlatformSpec common fields.
+	IBMCloudPlatformSpec `json:",inline"`
+
+	// Region is the IBMCloud region in which the cluster resides. This configures the
+	// OCP control plane cloud integrations, and is used by NodePool to resolve
+	// the correct boot image for a given release.
+	//
+	// +immutable
+	Region string `json:"region"`
+}
+
+// IBMCloudPowerVSProviderConfig specifies IBMCloud PowerVS networking configuration.
+type IBMCloudPowerVSProviderConfig struct {
+	// Subnet is the subnet to use for control plane cloud resources.
+	//
+	// +optional
+	Subnet *IBMCloudPowerVSResourceReference `json:"subnet,omitempty"`
+
+	// Zone is the availability zone where control plane cloud resources are
+	// created.
+	//
+	// +optional
+	Zone string `json:"zone,omitempty"`
+
+	// Image is the image to use for control plane cloud resources.
+	//
+	// +optional
+	Image *IBMCloudPowerVSResourceReference `json:"image,omitempty"`
+
+	// ServiceInstanceID is the ServiceInstance to use for control plane cloud resources.
+	ServiceInstanceID string `json:"serviceInstanceID"`
+
+	// VPC is the VPC to use for control plane cloud resources.
+	VPC string `json:"vpc"`
+}
+
+// IBMCloudPowerVSResourceReference is a reference to a specific IBMCloud PowerVS resource by ID, or Name.
+// Only one of ID, or Name may be specified. Specifying more than one will result in
+// a validation error.
+type IBMCloudPowerVSResourceReference struct {
+	// ID of resource
+	// +optional
+	ID *string `json:"id,omitempty"`
+
+	// Name of resource
+	// +optional
+	Name *string `json:"arn,omitempty"`
 }
 
 // AWSResourceTag is a tag to apply to AWS resources created for the cluster.
@@ -809,11 +915,11 @@ type SecretEncryptionSpec struct {
 }
 
 // KMSProvider defines the supported KMS providers
-// +kubebuilder:validation:Enum=IBMCloud;AWS
+// +kubebuilder:validation:Enum=IBMCloudPowerVS;AWS
 type KMSProvider string
 
 const (
-	IBMCloud KMSProvider = "IBMCloud"
+	IBMCloud KMSProvider = "IBMCloudPowerVS"
 	AWS      KMSProvider = "AWS"
 )
 

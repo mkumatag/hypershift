@@ -58,6 +58,7 @@ type CreateOptions struct {
 	AgentPlatform                    AgentPlatformCreateOptions
 	Wait                             bool
 	Timeout                          time.Duration
+	IBMCloudPowerVSPlatform          IBMCloudPowerVSPlatformOptions
 }
 
 type AgentPlatformCreateOptions struct {
@@ -89,6 +90,20 @@ type AWSPlatformOptions struct {
 	RootVolumeSize     int64
 	RootVolumeType     string
 	EndpointAccess     string
+}
+
+type IBMCloudPlatformOptions struct {
+	APIKey     string
+	VPC        string
+	BaseDomain string
+}
+
+type IBMCloudPowerVSPlatformOptions struct {
+	*IBMCloudPlatformOptions
+}
+
+type IBMCloudVPCPlatformOptions struct {
+	IBMCloudPlatformOptions
 }
 
 func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, error) {

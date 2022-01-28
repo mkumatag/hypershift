@@ -3,6 +3,7 @@ package ibmcloud
 import (
 	"context"
 	"fmt"
+	k8sutilspointer "k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -18,7 +19,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type IBMCloud struct{}
+const (
+	// Release artifacts: https://github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/releases/tag/v0.1.0-alpha.3
+	// TODO(mkumatag): Move to OpenShift built image
+	imageCAPIBM = "gcr.io/k8s-staging-capi-ibmcloud/cluster-api-ibmcloud-controller:v0.1.0-alpha.4"
+	//imageCAPIBM = "quay.io/mkumatag/capi-ibm:watch-namespace"
+)
+
+type IBMCloud struct {
+	Credential string
+}
 
 func (p IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
@@ -60,12 +70,236 @@ func (p IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, cre
 }
 
 func (p IBMCloud) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string) (*appsv1.DeploymentSpec, error) {
-	return nil, nil
+	defaultMode := int32(420)
+	deploymentSpec := &appsv1.DeploymentSpec{
+		Template: corev1.PodTemplateSpec{
+			Spec: corev1.PodSpec{
+				TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
+				Tolerations: []corev1.Toleration{
+					{
+						Key:    "node-role.kubernetes.io/master",
+						Effect: corev1.TaintEffectNoSchedule,
+					},
+				},
+				Volumes: []corev1.Volume{
+					{
+						Name: "capi-webhooks-tls",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								DefaultMode: &defaultMode,
+								SecretName:  "capi-webhooks-tls",
+							},
+						},
+					},
+					{
+						Name: "credentials",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								SecretName: p.Credential,
+							},
+						},
+					},
+					{
+						Name: "svc-kubeconfig",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								DefaultMode: &defaultMode,
+								SecretName:  "service-network-admin-kubeconfig",
+							},
+						},
+					},
+					{
+						Name: "token",
+						VolumeSource: corev1.VolumeSource{
+							EmptyDir: &corev1.EmptyDirVolumeSource{
+								Medium: corev1.StorageMediumMemory,
+							},
+						},
+					},
+				},
+				Containers: []corev1.Container{
+					{
+						Name:            "manager",
+						Image:           imageCAPIBM,
+						ImagePullPolicy: corev1.PullAlways,
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "credentials",
+								MountPath: "/home/.ibmcloud",
+							},
+							{
+								Name:      "capi-webhooks-tls",
+								ReadOnly:  true,
+								MountPath: "/tmp/k8s-webhook-server/serving-certs",
+							},
+							{
+								Name:      "token",
+								MountPath: "/var/run/secrets/openshift/serviceaccount",
+							},
+						},
+						Env: []corev1.EnvVar{
+							{
+								Name: "MY_NAMESPACE",
+								ValueFrom: &corev1.EnvVarSource{
+									FieldRef: &corev1.ObjectFieldSelector{
+										FieldPath: "metadata.namespace",
+									},
+								},
+							},
+							{
+								Name:  "IBM_CREDENTIALS_FILE",
+								Value: "/home/.ibmcloud/ibm-credentials.env",
+							},
+						},
+						Command: []string{"/manager"},
+						Args: []string{"--namespace", "$(MY_NAMESPACE)",
+							//TODO(mkumatag): Add the log level and stdtoerror post klogr support added.
+							"--leader-elect=true",
+						},
+						// TODO(mkumatag): enable health once fixed in the upstream
+						//Ports: []corev1.ContainerPort{
+						//	{
+						//		Name:          "healthz",
+						//		ContainerPort: 9440,
+						//		Protocol:      corev1.ProtocolTCP,
+						//	},
+						//},
+						//LivenessProbe: &corev1.Probe{
+						//	ProbeHandler: corev1.ProbeHandler{
+						//		HTTPGet: &corev1.HTTPGetAction{
+						//			Path: "/healthz",
+						//			Port: intstr.FromString("healthz"),
+						//		},
+						//	},
+						//},
+						//ReadinessProbe: &corev1.Probe{
+						//	ProbeHandler: corev1.ProbeHandler{
+						//		HTTPGet: &corev1.HTTPGetAction{
+						//			Path: "/readyz",
+						//			Port: intstr.FromString("healthz"),
+						//		},
+						//	},
+						//},
+					},
+					{
+						Name:            "token-minter",
+						Image:           tokenMinterImage,
+						ImagePullPolicy: corev1.PullAlways,
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "token",
+								MountPath: "/var/run/secrets/openshift/serviceaccount",
+							},
+							{
+								Name:      "svc-kubeconfig",
+								MountPath: "/etc/kubernetes",
+							},
+						},
+						Command: []string{"/usr/bin/token-minter"},
+						Args: []string{
+							"-service-account-namespace=kube-system",
+							"-service-account-name=capa-controller-manager",
+							"-token-audience=openshift",
+							"-token-file=/var/run/secrets/openshift/serviceaccount/token",
+							"-kubeconfig=/etc/kubernetes/kubeconfig",
+						},
+					},
+				},
+			},
+		},
+	}
+	return deploymentSpec, nil
 }
 
 func (p IBMCloud) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
+	// Reconcile the platform provider cloud controller credentials secret by resolving
+	// the reference from the HostedCluster and syncing the secret in the control
+	// plane namespace.
+	var src corev1.Secret
+	if err := c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.IBMCloudPowerVS.KubeCloudControllerCreds.Name}, &src); err != nil {
+		return fmt.Errorf("failed to get cloud controller provider creds %s: %w", hcluster.Spec.Platform.IBMCloudPowerVS.KubeCloudControllerCreds.Name, err)
+	}
+	dest := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      src.Name,
+		},
+	}
+	_, err := createOrUpdate(ctx, c, dest, func() error {
+		srcData, srcHasData := src.Data["ibm-credentials.env"]
+		if !srcHasData {
+			return fmt.Errorf("hostedcluster cloud controller provider credentials secret %q must have a credentials key", src.Name)
+		}
+		dest.Type = corev1.SecretTypeOpaque
+		if dest.Data == nil {
+			dest.Data = map[string][]byte{}
+		}
+		dest.Data["credentials"] = srcData
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile cloud controller provider creds: %w", err)
+	}
+
+	// Reconcile the platform provider node pool management credentials secret by
+	// resolving  the reference from the HostedCluster and syncing the secret in
+	// the control plane namespace.
+	err = c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.IBMCloudPowerVS.NodePoolManagementCreds.Name}, &src)
+	if err != nil {
+		return fmt.Errorf("failed to get node pool provider creds %s: %w", hcluster.Spec.Platform.IBMCloudPowerVS.NodePoolManagementCreds.Name, err)
+	}
+	dest = &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      src.Name,
+		},
+	}
+	_, err = createOrUpdate(ctx, c, dest, func() error {
+		srcData, srcHasData := src.Data["ibm-credentials.env"]
+		if !srcHasData {
+			return fmt.Errorf("node pool provider credentials secret %q is missing credentials key", src.Name)
+		}
+		dest.Type = corev1.SecretTypeOpaque
+		if dest.Data == nil {
+			dest.Data = map[string][]byte{}
+		}
+		dest.Data["credentials"] = srcData
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile node pool provider creds: %w", err)
+	}
+
+	// Reconcile the platform provider node pool management credentials secret by
+	// resolving  the reference from the HostedCluster and syncing the secret in
+	// the control plane namespace.
+	err = c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.IBMCloudPowerVS.ControlPlaneOperatorCreds.Name}, &src)
+	if err != nil {
+		return fmt.Errorf("failed to get control plane operator provider creds %s: %w", hcluster.Spec.Platform.IBMCloudPowerVS.ControlPlaneOperatorCreds.Name, err)
+	}
+	dest = &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      src.Name,
+		},
+	}
+	_, err = createOrUpdate(ctx, c, dest, func() error {
+		srcData, srcHasData := src.Data["ibm-credentials.env"]
+		if !srcHasData {
+			return fmt.Errorf("control plane operator provider credentials secret %q is missing credentials key", src.Name)
+		}
+		dest.Type = corev1.SecretTypeOpaque
+		if dest.Data == nil {
+			dest.Data = map[string][]byte{}
+		}
+		dest.Data["credentials"] = srcData
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile control plane operator provider creds: %w", err)
+	}
 	return nil
 }
 

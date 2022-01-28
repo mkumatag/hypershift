@@ -72,6 +72,10 @@ func GetPlatform(hcluster *hyperv1.HostedCluster) (Platform, error) {
 		platform = &agent.Agent{}
 	case hyperv1.KubevirtPlatform:
 		platform = &kubevirt.Kubevirt{}
+	case hyperv1.IBMCloudPowerVSPlatform:
+		platform = ibmcloud.IBMCloud{
+			Credential: hcluster.Spec.Platform.IBMCloudPowerVS.NodePoolManagementCreds.Name,
+		}
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}

@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"github.com/openshift/hypershift/cmd/cluster/ibmcloud"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -63,6 +64,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.AddCommand(none.NewCreateCommand(opts))
 	cmd.AddCommand(agent.NewCreateCommand(opts))
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
+	cmd.AddCommand(ibmcloud.NewCreateCommand(opts))
 
 	return cmd
 }

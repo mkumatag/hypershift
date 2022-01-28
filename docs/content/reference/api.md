@@ -3179,6 +3179,7 @@ call IBM Cloud KMS APIs</p>
 ###IBMCloudPlatformSpec { #hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPowerVSPlatformSpec">IBMCloudPowerVSPlatformSpec</a>, 
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>, 
 <a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
 </p>
@@ -3204,8 +3205,318 @@ github.com/openshift/api/config/v1.IBMCloudProviderType
 <p>ProviderType is a specific supported infrastructure provider within IBM Cloud.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>kubeCloudControllerCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>KubeCloudControllerCreds is a reference to a secret containing cloud
+credentials with permissions matching the cloud controller policy. The
+secret should have exactly one key, <code>credentials</code>, whose value is an AWS
+credentials file.</p>
+<p>TODO(dan): document the &ldquo;cloud controller policy&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodePoolManagementCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>NodePoolManagementCreds is a reference to a secret containing cloud
+credentials with permissions matching the node pool management policy. The
+secret should have exactly one key, <code>credentials</code>, whose value is an AWS
+credentials file.</p>
+<p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneOperatorCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>ControlPlaneOperatorCreds is a reference to a secret containing cloud
+credentials with permissions matching the control-plane-operator policy.
+The secret should have exactly one key, <code>credentials</code>, whose value is
+an AWS credentials file.</p>
+<p>TODO(dan): document the &ldquo;control plane operator policy&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ibmcloudvpc</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudVPCPlatformSpec">
+IBMCloudVPCPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>IBMCloudVPC specifies configuration for clusters running on IBM Cloud VPC.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ibmcloudpowervs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPowerVSPlatformSpec">
+IBMCloudPowerVSPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>IBMCloudPowerVS specifies configuration for clusters running on IBM Cloud Power VS.</p>
+</td>
+</tr>
 </tbody>
 </table>
+###IBMCloudPowerVSNodePoolPlatform { #hypershift.openshift.io/v1alpha1.IBMCloudPowerVSNodePoolPlatform }
+<p>
+<p>IBMCloudPowerVSNodePoolPlatform specifies the configuration of a NodePool when operating
+on IBMCloudPowerVS.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>serviceInstanceID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ServiceInstanceID is the ServiceInstance to use for control plane cloud resources.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>image</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPowerVSResourceReference">
+IBMCloudPowerVSResourceReference
+</a>
+</em>
+</td>
+<td>
+<p>Image</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>subnet</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPowerVSResourceReference">
+IBMCloudPowerVSResourceReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Subnet is the subnet to use for control plane cloud resources.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###IBMCloudPowerVSPlatformSpec { #hypershift.openshift.io/v1alpha1.IBMCloudPowerVSPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">IBMCloudPlatformSpec</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>IBMCloudPowerVSPlatformSpec specifies configuration for clusters running on IBMCloud Power VS.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>IBMCloudPlatformSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">
+IBMCloudPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>IBMCloudPlatformSpec</code> are embedded into this type.)
+</p>
+<p>IBMCloudPlatformSpec common fields.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>region</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Region is the IBMCloud region in which the cluster resides. This configures the
+OCP control plane cloud integrations, and is used by NodePool to resolve
+the correct boot image for a given release.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###IBMCloudPowerVSProviderConfig { #hypershift.openshift.io/v1alpha1.IBMCloudPowerVSProviderConfig }
+<p>
+<p>IBMCloudPowerVSProviderConfig specifies IBMCloud PowerVS networking configuration.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>subnet</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPowerVSResourceReference">
+IBMCloudPowerVSResourceReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Subnet is the subnet to use for control plane cloud resources.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>zone</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Zone is the availability zone where control plane cloud resources are
+created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>image</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPowerVSResourceReference">
+IBMCloudPowerVSResourceReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Image is the image to use for control plane cloud resources.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceInstanceID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ServiceInstanceID is the ServiceInstance to use for control plane cloud resources.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>vpc</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>VPC is the VPC to use for control plane cloud resources.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###IBMCloudPowerVSResourceReference { #hypershift.openshift.io/v1alpha1.IBMCloudPowerVSResourceReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPowerVSNodePoolPlatform">IBMCloudPowerVSNodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPowerVSProviderConfig">IBMCloudPowerVSProviderConfig</a>)
+</p>
+<p>
+<p>IBMCloudPowerVSResourceReference is a reference to a specific IBMCloud PowerVS resource by ID, or Name.
+Only one of ID, or Name may be specified. Specifying more than one will result in
+a validation error.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>id</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ID of resource</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>arn</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Name of resource</p>
+</td>
+</tr>
+</tbody>
+</table>
+###IBMCloudVPCPlatformSpec { #hypershift.openshift.io/v1alpha1.IBMCloudVPCPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">IBMCloudPlatformSpec</a>)
+</p>
+<p>
+<p>IBMCloudVPCPlatformSpec specifies configuration for clusters running on IBMCloud VPC.</p>
+</p>
 ###ImageContentSource { #hypershift.openshift.io/v1alpha1.ImageContentSource }
 <p>
 (<em>Appears on:</em>
@@ -3278,7 +3589,7 @@ without any new nodes being created or any old nodes being deleted.</p>
 </thead>
 <tbody><tr><td><p>&#34;AWS&#34;</p></td>
 <td></td>
-</tr><tr><td><p>&#34;IBMCloud&#34;</p></td>
+</tr><tr><td><p>&#34;IBMCloudPowerVS&#34;</p></td>
 <td></td>
 </tr></tbody>
 </table>
@@ -3312,7 +3623,7 @@ KMSProvider
 <p>
 Value must be one of:
 &#34;AWS&#34;, 
-&#34;IBMCloud&#34;
+&#34;IBMCloudPowerVS&#34;
 </p>
 </td>
 </tr>
@@ -3653,6 +3964,8 @@ Value must be one of:
 &#34;AWS&#34;, 
 &#34;Agent&#34;, 
 &#34;IBMCloud&#34;, 
+&#34;IBMCloudPowerVS&#34;, 
+&#34;IBMCloudVPC&#34;, 
 &#34;KubeVirt&#34;, 
 &#34;None&#34;
 </p>
@@ -4014,6 +4327,8 @@ Value must be one of:
 &#34;AWS&#34;, 
 &#34;Agent&#34;, 
 &#34;IBMCloud&#34;, 
+&#34;IBMCloudPowerVS&#34;, 
+&#34;IBMCloudVPC&#34;, 
 &#34;KubeVirt&#34;, 
 &#34;None&#34;
 </p>
@@ -4060,6 +4375,19 @@ IBMCloudPlatformSpec
 <p>IBMCloud defines IBMCloud specific settings for components</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>ibmcloudpowervs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPowerVSPlatformSpec">
+IBMCloudPowerVSPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>IBMCloudPowerVS defines IBMCloudPowerVS specific settings for components</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###PlatformType { #hypershift.openshift.io/v1alpha1.PlatformType }
@@ -4086,6 +4414,12 @@ IBMCloudPlatformSpec
 </td>
 </tr><tr><td><p>&#34;IBMCloud&#34;</p></td>
 <td><p>IBMCloudPlatform represents IBM Cloud infrastructure.</p>
+</td>
+</tr><tr><td><p>&#34;IBMCloudPowerVS&#34;</p></td>
+<td><p>IBMCloudPowerVSPlatform represents IBM Cloud Power VS infrastructure.</p>
+</td>
+</tr><tr><td><p>&#34;IBMCloudVPC&#34;</p></td>
+<td><p>IBMCloudVPCPlatform represents IBM Cloud infrastructure.</p>
 </td>
 </tr><tr><td><p>&#34;KubeVirt&#34;</p></td>
 <td><p>KubevirtPlatform represents Kubevirt infrastructure.</p>
