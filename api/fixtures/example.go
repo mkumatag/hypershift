@@ -482,6 +482,10 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			},
 		}
 		nodePools = append(nodePools, nodePool)
+	case hyperv1.NonePlatform, hyperv1.AgentPlatform:
+		nodePools = append(nodePools, defaultNodePool(cluster.Name))
+	default:
+		panic("Unsupported platform")
 	}
 
 	return &ExampleResources{
