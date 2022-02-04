@@ -43,6 +43,7 @@ import (
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
@@ -1422,6 +1423,19 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 				return err
 			}
 			o.Spec = *spec
+                        if o.Annotations == nil {
+                                o.Annotations = make(map[string]string)
+                        }
+                        o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+                        return nil
+                }
+
+	case hyperv1.IBMCloudPowerVSPlatform:
+		template = &capipowervs.IBMPowerVSMachineTemplate{}
+		machineTemplateSpec = ibmPowerVSMachineTemplateSpec(nodePool)
+		mutateTemplate = func(object client.Object) error {
+			o, _ := object.(*capipowervs.IBMPowerVSMachineTemplate)
+			o.Spec = *machineTemplateSpec.(*capipowervs.IBMPowerVSMachineTemplateSpec)
 			if o.Annotations == nil {
 				o.Annotations = make(map[string]string)
 			}
