@@ -3,6 +3,7 @@ package platform
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/ibmcloud_powervs"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/agent"
@@ -72,6 +73,8 @@ func GetPlatform(hcluster *hyperv1.HostedCluster) (Platform, error) {
 		platform = &agent.Agent{}
 	case hyperv1.KubevirtPlatform:
 		platform = &kubevirt.Kubevirt{}
+	case hyperv1.IBMCloudPowerVSPlatform:
+		platform = &ibmcloud_powervs.IBMCloudPowerVS{}
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}
