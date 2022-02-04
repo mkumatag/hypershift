@@ -62,6 +62,11 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
+	// Hardcoded the release image for the MCO operator
+	mcoImage, err := p.ReleaseProvider.Lookup(ctx, "quay.io/openshift-release-dev/ocp-release:4.10.0-fc.3-x86_64", pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
+	}
 	compressedConfig, err := compress([]byte(config))
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress config: %w", err)
@@ -73,7 +78,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	// and we might lose data.
 	base64CompressedConfig := base64.StdEncoding.EncodeToString(compressedConfig)
 	mcsConfigConfigMap := machineConfigServerConfigConfigMap(p.Namespace, base64CompressedConfig)
-	mcsPod := machineConfigServerPod(p.Namespace, img, mcsConfigConfigMap)
+	mcsPod := machineConfigServerPod(p.Namespace, mcoImage, img, mcsConfigConfigMap)
 
 	// Launch the pod and ensure we clean up regardless of outcome
 	defer func() {
@@ -94,7 +99,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		return nil, fmt.Errorf("failed to create machine config server RoleBinding: %w", err)
 	}
 
-	mcsPod = machineConfigServerPod(p.Namespace, img, mcsConfigConfigMap)
+	mcsPod = machineConfigServerPod(p.Namespace, mcoImage, img, mcsConfigConfigMap)
 	if err := p.Client.Create(ctx, mcsPod); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server Pod: %w", err)
 	}
@@ -210,8 +215,9 @@ cp /assets/manifests/*.machineconfigpool.yaml /mcc-manifests/bootstrap/manifests
 
 var mcoBootstrapScriptTemplate = template.Must(template.New("mcoBootstrap").Parse(mcoBootstrapScript))
 
-func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseImage, config *corev1.ConfigMap) *corev1.Pod {
+func machineConfigServerPod(namespace string, mcoReleaseImage, releaseImage *releaseinfo.ReleaseImage, config *corev1.ConfigMap) *corev1.Pod {
 	images := releaseImage.ComponentImages()
+	mcoImages := mcoReleaseImage.ComponentImages()
 	scriptArgs := map[string]string{
 		"mcoImage":                 images["machine-config-operator"],
 		"osContentImage":           images["machine-os-content"],
@@ -257,7 +263,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 			},
 			InitContainers: []corev1.Container{
 				{
-					Image: images["machine-config-operator"],
+					Image: mcoImages["machine-config-operator"],
 					Name:  "machine-config-operator-bootstrap",
 					Command: []string{
 						"/bin/bash",
@@ -278,7 +284,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					},
 				},
 				{
-					Image:           images["cli"],
+					Image:           mcoImages["cli"],
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Name:            "inject-custom-machine-configs",
 					Env: []corev1.EnvVar{
@@ -314,7 +320,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					},
 				},
 				{
-					Image:           images["machine-config-operator"],
+					Image:           mcoImages["machine-config-operator"],
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Name:            "machine-config-controller-bootstrap",
 					Command: []string{
@@ -340,7 +346,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 			},
 			Containers: []corev1.Container{
 				{
-					Image:           images["machine-config-operator"],
+					Image:           mcoImages["machine-config-operator"],
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Name:            "machine-config-server",
 					Command: []string{
