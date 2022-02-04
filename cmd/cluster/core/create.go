@@ -59,8 +59,15 @@ type CreateOptions struct {
 	AWSPlatform                      AWSPlatformOptions
 	AgentPlatform                    AgentPlatformCreateOptions
 	AzurePlatform                    AzurePlatformOptions
+	IBMCloudPowerVSPlatform          IBMCloudPowerVSPlatformOptions
 	Wait                             bool
 	Timeout                          time.Duration
+}
+
+type IBMCloudPowerVSPlatformOptions struct {
+	APIKey     string
+	VPC        string
+	BaseDomain string
 }
 
 type AgentPlatformCreateOptions struct {
