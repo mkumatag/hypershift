@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/agent"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/cluster/ibmcloud_powervs"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 )
@@ -65,6 +66,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.AddCommand(none.NewCreateCommand(opts))
 	cmd.AddCommand(agent.NewCreateCommand(opts))
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
+	cmd.AddCommand(ibmcloud_powervs.NewCreateCommand(opts))
 
 	return cmd
 }
