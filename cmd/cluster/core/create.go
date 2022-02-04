@@ -57,8 +57,15 @@ type CreateOptions struct {
 	KubevirtPlatform                 KubevirtPlatformCreateOptions
 	AWSPlatform                      AWSPlatformOptions
 	AgentPlatform                    AgentPlatformCreateOptions
+	IBMCloudPowerVSPlatform          IBMCloudPowerVSPlatformOptions
 	Wait                             bool
 	Timeout                          time.Duration
+}
+
+type IBMCloudPowerVSPlatformOptions struct {
+	APIKey     string
+	VPC        string
+	BaseDomain string
 }
 
 type AgentPlatformCreateOptions struct {

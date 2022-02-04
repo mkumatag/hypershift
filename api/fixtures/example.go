@@ -64,6 +64,7 @@ type ExampleOptions struct {
 	None                             *ExampleNoneOptions
 	Agent                            *ExampleAgentOptions
 	Kubevirt                         *ExampleKubevirtOptions
+	IBMCloudPowerVS                  *ExampleIBMCloudPowerVSOptions
 	NetworkType                      hyperv1.NetworkType
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
 	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
@@ -251,6 +252,71 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		}
 		services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.Kubevirt.APIServerAddress)
 
+	case o.IBMCloudPowerVS != nil:
+		buildIBMCloudCreds := func(name, apikey string) *corev1.Secret {
+			return &corev1.Secret{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Secret",
+					APIVersion: corev1.SchemeGroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace.Name,
+					Name:      name,
+				},
+				Data: map[string][]byte{
+					"ibm-credentials.env": []byte(fmt.Sprintf(`IBMCLOUD_AUTH_TYPE=iam
+ IBMCLOUD_APIKEY=%s
+ IBMCLOUD_AUTH_URL=https://iam.cloud.ibm.com
+ `, apikey)),
+				},
+			}
+		}
+		powerVSResources := &ExampleIBMCloudPowerVSResources{
+			buildIBMCloudCreds(o.Name+"-cloud-ctrl-creds", o.IBMCloudPowerVS.ApiKey),
+			buildIBMCloudCreds(o.Name+"-node-mgmt-creds", o.IBMCloudPowerVS.ApiKey),
+			buildIBMCloudCreds(o.Name+"-cpo-creds", o.IBMCloudPowerVS.ApiKey),
+		}
+		resources = powerVSResources.AsObjects()
+		platformSpec = hyperv1.PlatformSpec{
+			Type: hyperv1.IBMCloudPowerVSPlatform,
+			IBMCloudPowerVS: &hyperv1.IBMCloudPowerVSPlatformSpec{
+				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: powerVSResources.KubeCloudControllerIBMCloudPowerVSCreds.Name},
+				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: powerVSResources.NodePoolManagementIBMCloudPowerVSCreds.Name},
+				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: powerVSResources.ControlPlaneOperatorIBMCloudPowerVSCreds.Name},
+			},
+		}
+		services = []hyperv1.ServicePublishingStrategyMapping{
+			{
+				Service: hyperv1.APIServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.LoadBalancer,
+				},
+			},
+			{
+				Service: hyperv1.OAuthServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.OIDC,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.S3,
+				},
+			},
+			{
+				Service: hyperv1.Konnectivity,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.Ignition,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+		}
 	default:
 		panic("no platform specified")
 	}
