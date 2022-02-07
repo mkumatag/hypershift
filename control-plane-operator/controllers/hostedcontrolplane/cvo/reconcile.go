@@ -75,7 +75,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image, cliImage string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image, cliImage, nodeImage string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -88,10 +88,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				InitContainers: []corev1.Container{
-					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(image)),
+					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(cliImage, nodeImage)),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(image)),
+					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(image, nodeImage)),
 					util.BuildContainer(cvoContainerApplyBootstrap(), buildCVOContainerApplyBootstrap(cliImage)),
 				},
 				Volumes: []corev1.Volume{
@@ -124,13 +124,13 @@ func cvoContainerMain() *corev1.Container {
 	}
 }
 
-func buildCVOContainerPrepPayload(image string) func(c *corev1.Container) {
+func buildCVOContainerPrepPayload(image, nodeImage string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"/bin/bash"}
 		c.Args = []string{
 			"-c",
-			preparePayloadScript(),
+			preparePayloadScript(nodeImage),
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
@@ -154,14 +154,18 @@ func buildCVOContainerApplyBootstrap(image string) func(*corev1.Container) {
 	}
 }
 
-func preparePayloadScript() string {
+func preparePayloadScript(nodeImage string) string {
 	payloadDir := volumeMounts.Path(cvoContainerPrepPayload().Name, cvoVolumePayload().Name)
 	stmts := make([]string, 0, len(manifestsToOmit)+2)
 	stmts = append(stmts,
-		fmt.Sprintf("cp -R /manifests %s/", payloadDir),
+		fmt.Sprintf("mkdir -p /tmp/payload"),
+		// TODO(mkumatag): Need to pass the pull secret to oc image extract command
+		fmt.Sprintf("oc image extract %s --path /:/tmp/payload", nodeImage),
+		fmt.Sprintf("cp -R /tmp/payload/manifests %s/", payloadDir),
+		fmt.Sprintf("cp -R /tmp/payload/release-manifests %s/", payloadDir),
+		fmt.Sprintf("rm -rf /tmp/payload"),
 		fmt.Sprintf("rm %s/manifests/*_deployment.yaml", payloadDir),
 		fmt.Sprintf("rm %s/manifests/*_servicemonitor.yaml", payloadDir),
-		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
 	)
 	for _, manifest := range manifestsToOmit {
 		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", manifest)))
@@ -193,14 +197,14 @@ done
 	return fmt.Sprintf(script, payloadDir)
 }
 
-func buildCVOContainerMain(image string) func(c *corev1.Container) {
+func buildCVOContainerMain(image, nodeImage string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"cluster-version-operator"}
 		c.Args = []string{
 			"start",
 			"--release-image",
-			image,
+			nodeImage,
 			"--enable-auto-update=false",
 			"--enable-default-cluster-version=true",
 			"--kubeconfig",

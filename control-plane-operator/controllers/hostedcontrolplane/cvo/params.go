@@ -11,6 +11,7 @@ import (
 
 type CVOParams struct {
 	Image            string
+	NodeImage        string
 	CLIImage         string
 	OwnerRef         config.OwnerRef
 	DeploymentConfig config.DeploymentConfig
@@ -18,9 +19,10 @@ type CVOParams struct {
 
 func NewCVOParams(hcp *hyperv1.HostedControlPlane, images map[string]string, setDefaultSecurityContext bool) *CVOParams {
 	p := &CVOParams{
-		CLIImage: images["cli"],
-		Image:    hcp.Spec.ReleaseImage,
-		OwnerRef: config.OwnerRefFrom(hcp),
+		CLIImage:  images["cli"],
+		Image:     hcp.Spec.ReleaseImage,
+		NodeImage: hcp.Spec.NodeReleaseImage,
+		OwnerRef:  config.OwnerRefFrom(hcp),
 	}
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		cvoContainerPrepPayload().Name: {

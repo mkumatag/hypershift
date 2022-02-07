@@ -93,6 +93,8 @@ type HostedClusterSpec struct {
 	// and InfrastructureAvailabilityPolicy.
 	Release Release `json:"release"`
 
+	NodeRelease Release `json:"nodeRelease"`
+
 	// InfraID is a globally unique identifier for the cluster. This identifier
 	// will be used to associate various cloud resources with the HostedCluster
 	// and its associated NodePools.

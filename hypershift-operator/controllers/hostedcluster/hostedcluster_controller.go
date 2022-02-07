@@ -1032,6 +1032,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	// the HostedCluster.
 	if hcp.ObjectMeta.CreationTimestamp.IsZero() {
 		hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
+		hcp.Spec.NodeReleaseImage = hcluster.Spec.NodeRelease.Image
 	}
 
 	hcp.Annotations = map[string]string{

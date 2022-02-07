@@ -474,6 +474,16 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 	return r.ReleaseProvider.Lookup(lookupCtx, hcp.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
 }
 
+func (r *HostedControlPlaneReconciler) LookupNodeReleaseImage(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*releaseinfo.ReleaseImage, error) {
+	pullSecret := common.PullSecret(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return nil, err
+	}
+	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer lookupCancel()
+	return r.ReleaseProvider.Lookup(lookupCtx, hcp.Spec.NodeReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+}
+
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
 
 	// Block here if the cluster configuration does not pass validation
@@ -490,6 +500,13 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	if err != nil {
 		return fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
+
+	r.Log.Info("Looking up node release image metadata", "image", hostedControlPlane.Spec.NodeReleaseImage)
+	nodeReleaseImage, err := r.LookupNodeReleaseImage(ctx, hostedControlPlane)
+	if err != nil {
+		return fmt.Errorf("failed to look up release image metadata: %w", err)
+	}
+
 	componentVersions, err := releaseImage.ComponentVersions()
 	if err != nil {
 		return fmt.Errorf("invalid component versions found in release info: %w", err)
@@ -613,7 +630,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile cluster version operator
 	r.Log.Info("Reonciling Cluster Version Operator")
-	if err = r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImage); err != nil {
+	if err = r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImage, nodeReleaseImage); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
 	}
 
@@ -1722,12 +1739,12 @@ func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx cont
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage, nodeReleaseImage *releaseinfo.ReleaseImage) error {
 	p := cvo.NewCVOParams(hcp, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.Image, p.CLIImage)
+		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.Image, p.CLIImage, p.NodeImage)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
