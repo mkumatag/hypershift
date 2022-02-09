@@ -76,7 +76,6 @@ var (
 )
 
 func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image, cliImage string) error {
-	nodeReleaseImage := "quay.io/openshift-release-dev/ocp-release:4.10.0-fc.4-ppc64le"
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -89,10 +88,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				InitContainers: []corev1.Container{
-					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(cliImage)),
+					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(image)),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(image, nodeReleaseImage)),
+					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(image)),
 					util.BuildContainer(cvoContainerApplyBootstrap(), buildCVOContainerApplyBootstrap(cliImage)),
 				},
 				Volumes: []corev1.Volume{
@@ -158,15 +157,11 @@ func buildCVOContainerApplyBootstrap(image string) func(*corev1.Container) {
 func preparePayloadScript() string {
 	payloadDir := volumeMounts.Path(cvoContainerPrepPayload().Name, cvoVolumePayload().Name)
 	stmts := make([]string, 0, len(manifestsToOmit)+2)
-	// TODO(mkumatag): feed the release image here properly
 	stmts = append(stmts,
-		fmt.Sprintf("mkdir -p /tmp/payload"),
-		fmt.Sprintf("oc image extract quay.io/openshift-release-dev/ocp-release:4.10.0-fc.4-ppc64le --path /:/tmp/payload"),
-		fmt.Sprintf("cp -R /tmp/payload/manifests %s/", payloadDir),
-		fmt.Sprintf("cp -R /tmp/payload/release-manifests %s/", payloadDir),
-		fmt.Sprintf("rm -rf /tmp/payload"),
+		fmt.Sprintf("cp -R /manifests %s/", payloadDir),
 		fmt.Sprintf("rm %s/manifests/*_deployment.yaml", payloadDir),
 		fmt.Sprintf("rm %s/manifests/*_servicemonitor.yaml", payloadDir),
+		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
 	)
 	for _, manifest := range manifestsToOmit {
 		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", manifest)))
@@ -198,14 +193,14 @@ done
 	return fmt.Sprintf(script, payloadDir)
 }
 
-func buildCVOContainerMain(image, nodeimage string) func(c *corev1.Container) {
+func buildCVOContainerMain(image string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"cluster-version-operator"}
 		c.Args = []string{
 			"start",
 			"--release-image",
-			nodeimage,
+			image,
 			"--enable-auto-update=false",
 			"--enable-default-cluster-version=true",
 			"--kubeconfig",
