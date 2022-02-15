@@ -1,0 +1,22 @@
+{
+  "nodeCount": 1,
+  "powerVSNode": [
+    {
+      "nodeId": "1083401e-8319-4b86-aa34-62fbbb49b355",
+      "privateNetworkID": [
+        "a3e7fe51-a300-4313-b835-88e29dd8460f"
+      ]
+    }
+  ],
+  "powerVSPrivateSubnet": [
+    "a3e7fe51-a300-4313-b835-88e29dd8460f"
+  ],
+  "cloudConnectionId": "919c277d-f267-4d35-88a7-b6c4caae2038",
+  "vpc": [
+    {
+      "id": "r014-53f68c29-0c46-4d17-8f7f-67f9770e1441",
+      "subnetId": "0757-fe96d260-8ccf-4602-8985-1081c1407a27",
+      "loadBalancerId": "r014-73592226-76e8-4f68-ae6a-41d80f2a3570"
+    }
+  ]
+}

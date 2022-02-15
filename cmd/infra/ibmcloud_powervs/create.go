@@ -2,23 +2,23 @@ package ibmcloud_powervs
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
-	"io/ioutil"
 	"os"
 
-	"github.com/IBM-Cloud/power-go-client/clients/instance"
 	"github.com/IBM-Cloud/power-go-client/ibmpisession"
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/openshift/hypershift/cmd/log"
+	powerUtils "github.com/ppc64le-cloud/powervs-utils"
 	"github.com/spf13/cobra"
+	"sigs.k8s.io/cluster-api-provider-ibmcloud/pkg/cloud/services/resourcecontroller"
+	servicesUtils "sigs.k8s.io/cluster-api-provider-ibmcloud/pkg/cloud/services/utils"
 )
 
 type CreateInfraOptions struct {
 	CloudInstanceID  string
-	Region           string
-	Zone             string
+	VPCRegion        string
 	InfraID          string
 	IsManagedInfra   string
 	ManagedInfraJson string
@@ -29,14 +29,18 @@ type PowerVSNode struct {
 	PrivateNetworkID []string `json:"privateNetworkID"`
 }
 
+type VPC struct {
+	ID             string `json:"id"`
+	SubnetID       string `json:"subnetId"`
+	LoadBalancerID string `json:"loadBalancerId"`
+}
+
 type ManagedInfra struct {
 	NodeCount            int           `json:"nodeCount"`
-	PowerVSNodes         []PowerVSNode `json:"powerVSNode"`
+	PowerVSNode          []PowerVSNode `json:"powerVSNode"`
 	PowerVSPrivateSubnet []string      `json:"powerVSPrivateSubnet"`
 	CloudConnectionID    string        `json:"cloudConnectionId"`
-	VpcID                string        `json:"vpcId"`
-	VpcSubnetID          string        `json:"vpcSubnetId"`
-	LoadBalancerID       string        `json:"loadBalancerId"`
+	Vpc                  []VPC         `json:"vpc"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -48,12 +52,14 @@ func NewCreateCommand() *cobra.Command {
 
 	opts := CreateInfraOptions{}
 
-	cmd.Flags().StringVar(&opts.CloudInstanceID, "cloud-instance-id", opts.CloudInstanceID, "IBM Cloud InstanceID for PowerVS Environment")
-	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "IBM Cloud Region")
-	cmd.Flags().StringVar(&opts.Zone, "zone", opts.Zone, "IBM Cloud Zone")
+	cmd.Flags().StringVar(&opts.CloudInstanceID, "pv-cloud-instance-id", opts.CloudInstanceID, "IBM Cloud InstanceID for PowerVS Environment")
+	cmd.Flags().StringVar(&opts.VPCRegion, "vpc-region", opts.VPCRegion, "IBM Cloud VPC Region for VPC resources")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag PowerVS resources (required)")
 	cmd.Flags().StringVar(&opts.IsManagedInfra, "is-managed-infra", opts.IsManagedInfra, "Flag to mention user managed PowerVS resources or not")
 	cmd.Flags().StringVar(&opts.ManagedInfraJson, "managed-infra-json", opts.ManagedInfraJson, "If is-managed-infra is yes, JSON Path to information about PowerVS resources")
+
+	cmd.MarkFlagRequired("pv-cloud-instance-id")
+	cmd.MarkFlagRequired("vpc-region")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Run(cmd.Context()); err != nil {
@@ -68,28 +74,22 @@ func NewCreateCommand() *cobra.Command {
 }
 
 func (o *CreateInfraOptions) Run(ctx context.Context) error {
-	if o.CloudInstanceID == "" {
-		o.CloudInstanceID = os.Getenv("IBMCLOUD_INSTANCE_ID")
-
-		if o.CloudInstanceID == "" {
-			return fmt.Errorf("cloud-instance-id is required for PowerVS Infra")
-		}
-	}
-
-	if o.Region == "" {
-		o.Region = os.Getenv("IBMCLOUD_REGION")
-
-		if o.Region == "" {
-			return fmt.Errorf("region is required for PowerVS Infra")
-		}
-	}
 
 	if o.IsManagedInfra == "yes" {
 		if len(o.ManagedInfraJson) <= 0 {
 			return fmt.Errorf("managed-infra-json should be provided when is-managed-infra set to yes")
 		}
 
-		err := validateManagedInfra(o)
+		session, err := createPowerVSSession(o)
+		if err != nil {
+			return fmt.Errorf("error creating PowerVS session: %w", err)
+		}
+		vpcv1, err := createVpcService(o)
+		if err != nil {
+			return fmt.Errorf("error creating VPC service: %w", err)
+		}
+
+		err = validateManagedInfra(o, session, vpcv1)
 		if err != nil {
 			return err
 		}
@@ -104,130 +104,46 @@ func getIAMAuth() *core.IamAuthenticator {
 	}
 }
 
-func createPowerVSSession(createOpt *CreateInfraOptions) *ibmpisession.IBMPISession {
+func createPowerVSSession(createOpt *CreateInfraOptions) (*ibmpisession.IBMPISession, error) {
+	auth := getIAMAuth()
+	account, err := servicesUtils.GetAccount(auth)
 
-	opt := &ibmpisession.IBMPIOptions{Authenticator: getIAMAuth(),
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving account: %w", err)
+	}
+
+	rc, err := resourcecontroller.NewService(resourcecontroller.ServiceOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	res, _, err := rc.GetResourceInstance(
+		&resourcecontrollerv2.GetResourceInstanceOptions{
+			ID: core.StringPtr(createOpt.CloudInstanceID),
+		})
+	if err != nil {
+		return nil, fmt.Errorf("error collecting resource for cloud instance %s, error: %w", createOpt.CloudInstanceID, err)
+	}
+
+	region, err := powerUtils.GetRegion(*res.RegionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get region for cloud instance %s, error: %w", createOpt.CloudInstanceID, err)
+	}
+
+	opt := &ibmpisession.IBMPIOptions{Authenticator: auth,
 		Debug:       true,
-		Region:      createOpt.Region,
-		UserAccount: createOpt.CloudInstanceID,
-		Zone:        createOpt.Zone}
-	session, _ := ibmpisession.NewIBMPISession(opt)
-	return session
+		Region:      region,
+		UserAccount: account,
+		Zone:        *res.RegionID}
+	log.Log.Info("Printing IBM PI", "options", opt)
+	session, err := ibmpisession.NewIBMPISession(opt)
+	return session, err
 }
 
-func createVpcService(createOpt *CreateInfraOptions) *vpcv1.VpcV1 {
-	v1, _ := vpcv1.NewVpcV1(&vpcv1.VpcV1Options{
+func createVpcService(createOpt *CreateInfraOptions) (*vpcv1.VpcV1, error) {
+	v1, err := vpcv1.NewVpcV1(&vpcv1.VpcV1Options{
 		Authenticator: getIAMAuth(),
+		URL:           fmt.Sprintf("https://%s.iaas.cloud.ibm.com/v1", createOpt.VPCRegion),
 	})
-	return v1
-}
-
-func validateManagedInfra(createOpt *CreateInfraOptions) error {
-	rawJson, err := ioutil.ReadFile(createOpt.ManagedInfraJson)
-	if err != nil {
-		return fmt.Errorf("failed to read managed infra json: %w", err)
-	}
-
-	var managedInfra = &ManagedInfra{}
-	if err = json.Unmarshal(rawJson, managedInfra); err != nil {
-		return fmt.Errorf("failed to load infra json: %w", err)
-	}
-
-	if managedInfra != nil {
-		log.Log.Info("ManagedInfra Provided: %+v", managedInfra)
-		ibmPiSession := createPowerVSSession(createOpt)
-		vpcService := createVpcService(createOpt)
-
-		err = managedInfra.validatePowerVSSubnet(ibmPiSession, createOpt)
-		if err != nil {
-			return fmt.Errorf("error validating PowerVS Subnet: %w", err)
-		}
-
-		err = managedInfra.validatePowerVSInstance(ibmPiSession, createOpt)
-		if err != nil {
-			return fmt.Errorf("error validating PowerVS Instance: %w", err)
-		}
-
-		err = managedInfra.validateVpc(vpcService)
-	}
-	return nil
-}
-
-func (managedInfra *ManagedInfra) validatePowerVSSubnet(session *ibmpisession.IBMPISession, option *CreateInfraOptions) error {
-	pvNetworkClient := instance.NewIBMPINetworkClient(context.Background(), session, option.CloudInstanceID)
-	for _, subnetId := range managedInfra.PowerVSPrivateSubnet {
-		subnet, err := pvNetworkClient.Get(subnetId)
-		if err != nil {
-			return fmt.Errorf("error validating subnet: %s, error: %w", subnetId, err)
-		}
-
-		if *subnet.Type != "vlan" {
-			return fmt.Errorf("error validating subnet: %s, provided network is not private", subnetId)
-		}
-
-		log.Log.Info("Validated subnet: %s", subnetId)
-	}
-	return nil
-}
-
-func (managedInfra *ManagedInfra) validatePowerVSInstance(session *ibmpisession.IBMPISession, option *CreateInfraOptions) error {
-	pvInstanceClient := instance.NewIBMPIInstanceClient(context.Background(), session, option.CloudInstanceID)
-	for _, node := range managedInfra.PowerVSNodes {
-		pvInstance, err := pvInstanceClient.Get(node.NodeID)
-
-		if err != nil {
-			return fmt.Errorf("error validating node: %s, error: %w", node.NodeID, err)
-		}
-		networkCheckM := map[string]bool{}
-		for _, nwId := range node.PrivateNetworkID {
-			networkCheckM[nwId] = false
-		}
-		for _, nw := range pvInstance.Addresses {
-			_, exist := networkCheckM[nw.NetworkID]
-			if exist {
-				networkCheckM[nw.NetworkID] = true
-			}
-		}
-		for nwId, exist := range networkCheckM {
-			if !exist {
-				return fmt.Errorf("error validating node: %s, network: %s is Invalid", node.NodeID, nwId)
-			}
-		}
-
-		log.Log.Info("Validated Node: %s", node.NodeID)
-	}
-	return nil
-}
-
-func (managedInfra *ManagedInfra) validateVpc(v1 *vpcv1.VpcV1) error {
-	getVpcOpt := vpcv1.GetVPCOptions{ID: &managedInfra.VpcID}
-	vpcResult, _, err := v1.GetVPC(&getVpcOpt)
-
-	if err != nil {
-		return fmt.Errorf("error validating VPC: %s, error: %w", managedInfra.VpcID, err)
-	}
-	if vpcResult != nil || *vpcResult.ID != managedInfra.VpcID {
-		return fmt.Errorf("error validating VPC: %s, received invalid VPC", managedInfra.VpcID)
-	}
-
-	getSubnetOpt := vpcv1.GetSubnetOptions{ID: &managedInfra.VpcSubnetID}
-	vpcSubnetResult, _, err := v1.GetSubnet(&getSubnetOpt)
-
-	if err != nil {
-		return fmt.Errorf("error validating VPC Subnet: %s, error: %w", managedInfra.VpcSubnetID, err)
-	}
-	if vpcSubnetResult != nil || *vpcSubnetResult.ID != managedInfra.VpcSubnetID {
-		return fmt.Errorf("error validating VPC: %s, received invalid VPC Subnet", managedInfra.VpcSubnetID)
-	}
-
-	getLbOpt := vpcv1.GetLoadBalancerOptions{ID: &managedInfra.LoadBalancerID}
-	vpcLbResult, _, err := v1.GetLoadBalancer(&getLbOpt)
-
-	if err != nil {
-		return fmt.Errorf("error validating VPC LoadBalancer: %s, error: %w", managedInfra.LoadBalancerID, err)
-	}
-	if vpcLbResult != nil || *vpcLbResult.ID != managedInfra.VpcSubnetID {
-		return fmt.Errorf("error validating VPC: %s, received invalid VPC LoadBalancer", managedInfra.LoadBalancerID)
-	}
-	return nil
+	return v1, err
 }
