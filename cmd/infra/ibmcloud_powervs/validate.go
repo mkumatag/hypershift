@@ -1,5 +1,6 @@
 package ibmcloud_powervs
 
+/*
 import (
 	"context"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"io/ioutil"
 	"strings"
 )
+
 
 func validateManagedInfra(option *CreateInfraOptions, session *ibmpisession.IBMPISession, vpcV1 *vpcv1.VpcV1) error {
 	rawJson, err := ioutil.ReadFile(option.ManagedInfraJson)
@@ -66,9 +68,9 @@ func (managedInfra *ManagedInfra) validatePowerVSSubnet(session *ibmpisession.IB
 	return nil
 }
 
-func (managedInfra *ManagedInfra) validatePowerVSInstance(session *ibmpisession.IBMPISession, option *CreateInfraOptions) error {
-	pvInstanceClient := instance.NewIBMPIInstanceClient(context.Background(), session, option.CloudInstanceID)
-	for _, node := range managedInfra.PowerVSNode {
+func validatePowerVSInstance(pvInstances []string, pvSubnet string, session *ibmpisession.IBMPISession, option *CreateInfraOptions) error {
+	pvInstanceClient := instance.NewIBMPIInstanceClient(context.Background(), session, option.PowerVSCloudInstanceID)
+	for _, node := range pvInstances {
 		pvInstance, err := pvInstanceClient.Get(node.NodeID)
 
 		if err != nil {
@@ -158,3 +160,4 @@ func (managedInfra *ManagedInfra) validateCloudConnection(session *ibmpisession.
 	log.Log.Info("validated cloud connection", "id", managedInfra.CloudConnectionID)
 	return nil
 }
+*/
