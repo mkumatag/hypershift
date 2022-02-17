@@ -1,73 +1,49 @@
 package ibmcloud_powervs
 
-/*
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/IBM-Cloud/power-go-client/clients/instance"
-	"github.com/IBM-Cloud/power-go-client/ibmpisession"
-	"github.com/IBM/vpc-go-sdk/vpcv1"
-	"github.com/openshift/hypershift/cmd/log"
-	"io/ioutil"
-	"strings"
+	"github.com/IBM-Cloud/power-go-client/power/models"
+	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 )
 
-
-func validateManagedInfra(option *CreateInfraOptions, session *ibmpisession.IBMPISession, vpcV1 *vpcv1.VpcV1) error {
-	rawJson, err := ioutil.ReadFile(option.ManagedInfraJson)
+func validateCloudInstance(cloudInstanceID string) error {
+	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{Authenticator: getIAMAuth()})
 	if err != nil {
-		return fmt.Errorf("failed to read managed infra json: %w", err)
+		return err
 	}
 
-	var managedInfra = &ManagedInfra{}
-	if err = json.Unmarshal(rawJson, managedInfra); err != nil {
-		return fmt.Errorf("failed to load infra json: %w", err)
+	resourceInstance, _, err := rcv2.GetResourceInstance(&resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
+	if *resourceInstance.State != "active" {
+		return fmt.Errorf("provided cloud instance id is not in active state, current state: %s", *resourceInstance.State)
+	}
+	return err
+}
+
+func validatePowerVsSubnet(subnetName string, client *instance.IBMPINetworkClient) error {
+	subnets, err := client.GetAll()
+	if err != nil {
+		return err
 	}
 
-	if managedInfra != nil {
-		log.Log.Info("managedInfra", "provided:", managedInfra)
-
-		err = managedInfra.validatePowerVSSubnet(session, option)
-		if err != nil {
-			return fmt.Errorf("error validating powervs subnet: %w", err)
-		}
-
-		err = managedInfra.validatePowerVSInstance(session, option)
-		if err != nil {
-			return fmt.Errorf("error validating powervs instance: %w", err)
-		}
-
-		err = managedInfra.validateVpc(vpcV1)
-		if err != nil {
-			return fmt.Errorf("error validating vpc: %w", err)
-		}
-
-		err = managedInfra.validateCloudConnection(session, option)
-		if err != nil {
-			return fmt.Errorf("error validating cloud connection: %w", err)
+	var subnet *models.NetworkReference
+	for _, sn := range subnets.Networks {
+		if *sn.Name == subnetName {
+			subnet = sn
 		}
 	}
+
+	if subnet == nil {
+		return fmt.Errorf("subnet %s not found", subnetName)
+	}
+	if subnet != nil && *subnet.Type != "vlan" {
+		return fmt.Errorf("subnet: %s, provided is not private", subnetName)
+	}
+
 	return nil
 }
 
-func (managedInfra *ManagedInfra) validatePowerVSSubnet(session *ibmpisession.IBMPISession, option *CreateInfraOptions) error {
-	pvNetworkClient := instance.NewIBMPINetworkClient(context.Background(), session, option.CloudInstanceID)
-	for _, subnetId := range managedInfra.PowerVSPrivateSubnet {
-		subnet, err := pvNetworkClient.Get(subnetId)
-		if err != nil {
-			return fmt.Errorf("subnet: %s, error: %w", subnetId, err)
-		}
-
-		if *subnet.Type != "vlan" {
-			return fmt.Errorf("subnet: %s, provided network is not private", subnetId)
-		}
-
-		log.Log.Info("validated subnet:", "id", subnetId)
-	}
-	return nil
-}
-
+/*
 func validatePowerVSInstance(pvInstances []string, pvSubnet string, session *ibmpisession.IBMPISession, option *CreateInfraOptions) error {
 	pvInstanceClient := instance.NewIBMPIInstanceClient(context.Background(), session, option.PowerVSCloudInstanceID)
 	for _, node := range pvInstances {
