@@ -11,15 +11,13 @@ import (
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 	"github.com/IBM/platform-services-go-sdk/resourcemanagerv2"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
-	cidrutil "github.com/apparentlymart/go-cidr/cidr"
+	cidrUtil "github.com/apparentlymart/go-cidr/cidr"
 	"github.com/openshift/hypershift/cmd/log"
 	powerUtils "github.com/ppc64le-cloud/powervs-utils"
 	"github.com/spf13/cobra"
 	"net"
 	"os"
 	servicesUtils "sigs.k8s.io/cluster-api-provider-ibmcloud/pkg/cloud/services/utils"
-	"strconv"
-	"strings"
 )
 
 type CreateInfraOptions struct {
@@ -32,7 +30,7 @@ type CreateInfraOptions struct {
 	PowerVSZone            string
 	PowerVSCloudInstanceID string
 	PowerVSInstanceID      []string
-	PowerVSSubnetID        string
+	PowerVSSubnet          string
 	VpcRegion              string
 	VpcID                  string
 	VpcSubnetID            string
@@ -40,7 +38,7 @@ type CreateInfraOptions struct {
 	CloudConnectionID      string
 }
 
-const basePowerVsPrivateSubnetCIDR = "10.0.0.0/24"
+const basePowerVsPrivateSubnetCIDR = "10.0.1.0/24"
 
 type PowerVSNode struct {
 	NodeID           string   `json:"nodeId"`
@@ -77,7 +75,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.PowerVSZone, "pv-zone", opts.PowerVSZone, "PowerVS Region's Zone")
 	cmd.Flags().StringVar(&opts.PowerVSCloudInstanceID, "pv-cloud-instance-id", opts.PowerVSCloudInstanceID, "IBM Cloud InstanceID of PowerVS Resource Group")
 	cmd.Flags().StringSlice("pv-instance-id", opts.PowerVSInstanceID, "List of PowerVS Virtual Server Instance worker node's ID in a comma separated list")
-	cmd.Flags().StringVar(&opts.PowerVSSubnetID, "pv-subnet-id", opts.PowerVSSubnetID, "PowerVS Private Subnet ID attached to the PowerVS Instance")
+	cmd.Flags().StringVar(&opts.PowerVSSubnet, "pv-subnet-id", opts.PowerVSSubnet, "PowerVS Private Subnet ID attached to the PowerVS Instance")
 	cmd.Flags().StringVar(&opts.VpcRegion, "vpc-region", opts.VpcRegion, "IBM Cloud VPC Region for VPC resources")
 	cmd.Flags().StringVar(&opts.VpcID, "vpc-id", opts.VpcID, "IBM Cloud VPC ID")
 	cmd.Flags().StringVar(&opts.VpcSubnetID, "vpc-subnet-id", opts.VpcSubnetID, "VPC Subnet ID")
@@ -272,122 +270,51 @@ func setupPowerVsInstance(option *CreateInfraOptions, session *ibmpisession.IBMP
 func setupPowerVsSubnet(option *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
 	client := instance.NewIBMPINetworkClient(context.Background(), session, option.PowerVSCloudInstanceID)
 
-	if option.PowerVSSubnetID != "" {
-		err := validatePowerVsSubnet(option.PowerVSSubnetID, client)
+	var network *models.Network
+	var err error
+	if option.PowerVSSubnet != "" {
+		network, err = validatePowerVsSubnet(option.PowerVSSubnet, client)
 		if err != nil {
 			return err
+		}
+		availableNet := int(*network.IPAddressMetrics.Available)
+		if availableNet < option.NodePoolReplicas {
+			return fmt.Errorf("given network %s, does not accommodate %d node pool replicas", option.PowerVSSubnet, option.NodePoolReplicas)
 		}
 	} else {
-		var err error
-		option.PowerVSSubnetID, err = createPowerVsSubnet(client)
+		network, err = createPowerVsSubnet(option, client, basePowerVsPrivateSubnetCIDR)
 		if err != nil {
 			return err
 		}
+		option.PowerVSSubnet = *network.NetworkID
 	}
 
 	return nil
 }
 
-func generateIPData(cidr string) (string, string, string, error) {
-	_, ipv4Net, err := net.ParseCIDR(cidr)
-
-	if err != nil {
-		return "", "", "", err
-	}
-
-	var subnetToSize = map[string]int{
-		"21": 2048,
-		"22": 1024,
-		"23": 512,
-		"24": 256,
-		"25": 128,
-		"26": 64,
-		"27": 32,
-		"28": 16,
-		"29": 8,
-		"30": 4,
-		"31": 2,
-	}
-	gateway, err := cidrutil.Host(ipv4Net, 1)
-	if err != nil {
-		return "", "", "", err
-	}
-	ad := cidrutil.AddressCount(ipv4Net)
-
-	convertedad := strconv.FormatUint(ad, 10)
-	// Powervc in wdc04 has to reserve 3 ip address hence we start from the 4th. This will be the default behaviour
-	firstusable, err := cidrutil.Host(ipv4Net, 2)
-	if err != nil {
-
-	}
-	lastusable, err := cidrutil.Host(ipv4Net, subnetToSize[convertedad]-2)
-	if err != nil {
-		return "", "", "", err
-	}
-
-	return gateway.String(), firstusable.String(), lastusable.String(), nil
-}
-
-func findNextNwToUse(client *instance.IBMPINetworkClient) (string, error) {
-	networks, err := client.GetAll()
-	if err != nil {
-		return "", err
-	}
-
-	baseCidrSplit := strings.Split(basePowerVsPrivateSubnetCIDR, ".")[:3]
-	baseCidrPrefix := strings.Join(baseCidrSplit, ".")
-	lastNetwork := basePowerVsPrivateSubnetCIDR
-	for _, nw := range networks.Networks {
-		network, err := client.Get(*nw.NetworkID)
-		if err != nil {
-			return "", err
-		}
-		cidr := *network.Cidr
-		if strings.HasPrefix(cidr, baseCidrPrefix) {
-			if cidr > lastNetwork {
-				lastNetwork = cidr
-			}
-		}
-	}
-
-	lnSplit := strings.Split(lastNetwork, ".")
-	lastNwOctS := strings.Split(lnSplit[len(lnSplit)-1], "/")
-	lastNwOct, _ := strconv.Atoi(lastNwOctS[0])
-	nextOct := lastNwOct + 1
-	lastNwOctS[0] = strconv.Itoa(nextOct)
-	lnSplit[len(lnSplit)-1] = strings.Join(lastNwOctS, "/")
-	nextNw := strings.Join(lnSplit, ".")
-	return nextNw, nil
-}
-
-func createPowerVsSubnet(client *instance.IBMPINetworkClient) (string, error) {
+func createPowerVsSubnet(options *CreateInfraOptions, client *instance.IBMPINetworkClient, cidr string) (*models.Network, error) {
 	dnsServers := make([]string, 1)
 	netType := "vlan"           // private network
 	dnsServers[0] = "127.0.0.1" // dns servers should point to localhost for private network.
 
-	nextNw, err := findNextNwToUse(client)
+	_, ipNet, err := net.ParseCIDR(cidr)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("error parsing default subnet CIDR: %w", err)
 	}
-	gateway, startIP, endIP, err := generateIPData(nextNw)
-	if err != nil {
-		return "", err
-	}
+	gateway, err := cidrUtil.Host(ipNet, 1)
 
-	networkPayload := models.NetworkCreate{Cidr: nextNw,
+	networkPayload := models.NetworkCreate{Cidr: cidr,
 		DNSServers: dnsServers,
-		Gateway:    gateway,
-		IPAddressRanges: []*models.IPAddressRange{
-			{EndingIPAddress: &endIP, StartingIPAddress: &startIP}},
-		Jumbo: false,
-		Name:  fmt.Sprintf("%s-hypershift-private-subnet"),
-		Type:  &netType,
+		Gateway:    gateway.String(),
+		Jumbo:      false,
+		Name:       fmt.Sprintf("%s-hypershift-private-subnet", options.InfraID),
+		Type:       &netType,
 	}
 
 	network, err := client.Create(&networkPayload)
 
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return *network.NetworkID, nil
+	return network, nil
 }

@@ -14,33 +14,38 @@ func validateCloudInstance(cloudInstanceID string) error {
 	}
 
 	resourceInstance, _, err := rcv2.GetResourceInstance(&resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
-	if *resourceInstance.State != "active" {
+	if err != nil {
+		return err
+	}
+	if resourceInstance != nil && *resourceInstance.State != "active" {
 		return fmt.Errorf("provided cloud instance id is not in active state, current state: %s", *resourceInstance.State)
 	}
 	return err
 }
 
-func validatePowerVsSubnet(subnetName string, client *instance.IBMPINetworkClient) error {
+func validatePowerVsSubnet(subnetName string, client *instance.IBMPINetworkClient) (*models.Network, error) {
 	subnets, err := client.GetAll()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	var subnet *models.NetworkReference
+	var subnetRef *models.NetworkReference
 	for _, sn := range subnets.Networks {
 		if *sn.Name == subnetName {
-			subnet = sn
+			subnetRef = sn
 		}
 	}
 
-	if subnet == nil {
-		return fmt.Errorf("subnet %s not found", subnetName)
+	if subnetRef == nil {
+		return nil, fmt.Errorf("subnet %s not found", subnetName)
 	}
-	if subnet != nil && *subnet.Type != "vlan" {
-		return fmt.Errorf("subnet: %s, provided is not private", subnetName)
+	if subnetRef != nil && *subnetRef.Type != "vlan" {
+		return nil, fmt.Errorf("subnet: %s, provided is not private", subnetName)
 	}
 
-	return nil
+	subnet, err := client.Get(*subnetRef.NetworkID)
+
+	return subnet, err
 }
 
 /*
