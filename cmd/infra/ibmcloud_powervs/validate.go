@@ -5,22 +5,23 @@ import (
 	"github.com/IBM-Cloud/power-go-client/clients/instance"
 	"github.com/IBM-Cloud/power-go-client/power/models"
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
+	"github.com/IBM/vpc-go-sdk/vpcv1"
 )
 
-func validateCloudInstance(cloudInstanceID string) error {
+func validateCloudInstance(cloudInstanceID string) (*resourcecontrollerv2.ResourceInstance, error) {
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{Authenticator: getIAMAuth()})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	resourceInstance, _, err := rcv2.GetResourceInstance(&resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if resourceInstance != nil && *resourceInstance.State != "active" {
-		return fmt.Errorf("provided cloud instance id is not in active state, current state: %s", *resourceInstance.State)
+		return nil, fmt.Errorf("provided cloud instance id is not in active state, current state: %s", *resourceInstance.State)
 	}
-	return err
+	return resourceInstance, err
 }
 
 func validatePowerVsSubnet(subnetName string, client *instance.IBMPINetworkClient) (*models.Network, error) {
@@ -37,10 +38,10 @@ func validatePowerVsSubnet(subnetName string, client *instance.IBMPINetworkClien
 	}
 
 	if subnetRef == nil {
-		return nil, fmt.Errorf("subnet %s not found", subnetName)
+		return nil, fmt.Errorf("%s powervs subnet not found", subnetName)
 	}
 	if subnetRef != nil && *subnetRef.Type != "vlan" {
-		return nil, fmt.Errorf("subnet: %s, provided is not private", subnetName)
+		return nil, fmt.Errorf("%s powervs subnet is not private", subnetName)
 	}
 
 	subnet, err := client.Get(*subnetRef.NetworkID)
@@ -48,64 +49,57 @@ func validatePowerVsSubnet(subnetName string, client *instance.IBMPINetworkClien
 	return subnet, err
 }
 
+func validateVpc(options *CreateInfraOptions, resourceGroupID string, v1 *vpcv1.VpcV1) (vpc *vpcv1.VPC, err error) {
+	vpcList, _, err := v1.ListVpcs(&vpcv1.ListVpcsOptions{ResourceGroupID: &resourceGroupID})
+	if err != nil {
+		return nil, err
+	}
+	for _, vpc := range vpcList.Vpcs {
+		if *vpc.Name == options.Vpc {
+			return &vpc, nil
+		}
+	}
+	return nil, fmt.Errorf("%s vpc not found", options.Vpc)
+}
+
+func validateVpcSubnet(option *CreateInfraOptions, resourceGroupID string, v1 *vpcv1.VpcV1) (vpcSubnet *vpcv1.Subnet, err error) {
+	subnetList, _, err := v1.ListSubnets(&vpcv1.ListSubnetsOptions{ResourceGroupID: &resourceGroupID})
+	if err != nil {
+		return nil, err
+	}
+	for _, subnet := range subnetList.Subnets {
+		if *subnet.Name == option.VpcSubnet && *subnet.VPC.Name == option.Vpc {
+			return &subnet, nil
+		}
+	}
+	return vpcSubnet, fmt.Errorf("%s vpc subnet not found", option.VpcSubnet)
+}
+
+func validateVpcLoadBalancer(option *CreateInfraOptions, v1 *vpcv1.VpcV1) (vpcLoadBalancer *vpcv1.LoadBalancer, err error) {
+	loadBalancerList, _, err := v1.ListLoadBalancers(&vpcv1.ListLoadBalancersOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, loadBalancer := range loadBalancerList.LoadBalancers {
+		if *loadBalancer.Name == option.VpcLoadBalancer {
+			return &loadBalancer, nil
+		}
+	}
+	return nil, fmt.Errorf("%s load balancer not found", option.VpcLoadBalancer)
+}
+
+func validateCloudConnection(option *CreateInfraOptions, client *instance.IBMPICloudConnectionClient) (cloudConn *models.CloudConnection, err error) {
+	cloudConns, _ := client.GetAll()
+	for _, cloudConn := range cloudConns.CloudConnections {
+		if *cloudConn.Name == option.PowerVSCloudConnection {
+			return cloudConn, nil
+		}
+	}
+	return nil, fmt.Errorf("%s cloud connection not found", option.PowerVSCloudConnection)
+}
+
 /*
-func validatePowerVSInstance(pvInstances []string, pvSubnet string, session *ibmpisession.IBMPISession, option *CreateInfraOptions) error {
-	pvInstanceClient := instance.NewIBMPIInstanceClient(context.Background(), session, option.PowerVSCloudInstanceID)
-	for _, node := range pvInstances {
-		pvInstance, err := pvInstanceClient.Get(node.NodeID)
-
-		if err != nil {
-			return fmt.Errorf("node: %s, error: %w", node.NodeID, err)
-		}
-		networkCheckM := map[string]bool{}
-		for _, nwId := range node.PrivateNetworkID {
-			networkCheckM[nwId] = false
-		}
-		for _, nw := range pvInstance.Addresses {
-			_, exist := networkCheckM[nw.NetworkID]
-			if exist {
-				networkCheckM[nw.NetworkID] = true
-			}
-		}
-		for nwId, exist := range networkCheckM {
-			if !exist {
-				return fmt.Errorf("node: %s, network: %s is Invalid", node.NodeID, nwId)
-			}
-		}
-
-		log.Log.Info("validated node:", "id", node.NodeID)
-	}
-	return nil
-}
-
-func (managedInfra *ManagedInfra) validateVpc(vpcV1 *vpcv1.VpcV1) error {
-	for _, vpc := range managedInfra.Vpc {
-		getVpcOpt := vpcv1.GetVPCOptions{ID: &vpc.ID}
-		_, _, err := vpcV1.GetVPC(&getVpcOpt)
-
-		if err != nil {
-			return err
-		}
-
-		getSubnetOpt := vpcv1.GetSubnetOptions{ID: &vpc.SubnetID}
-		_, _, err = vpcV1.GetSubnet(&getSubnetOpt)
-
-		if err != nil {
-			return fmt.Errorf("subnet: %s, error: %w", vpc.SubnetID, err)
-		}
-
-		getLbOpt := vpcv1.GetLoadBalancerOptions{ID: &vpc.LoadBalancerID}
-		_, _, err = vpcV1.GetLoadBalancer(&getLbOpt)
-
-		if err != nil {
-			return fmt.Errorf("loadBalancer: %s, error: %w", vpc.LoadBalancerID, err)
-		}
-
-		log.Log.Info("validated vpc", "id", vpc.ID, "subnet", vpc.SubnetID, "load balancer", vpc.LoadBalancerID)
-	}
-	return nil
-}
-
 func (managedInfra *ManagedInfra) validateCloudConnection(session *ibmpisession.IBMPISession, option *CreateInfraOptions) error {
 	pvCloudConClient := instance.NewIBMPICloudConnectionClient(context.Background(), session, option.CloudInstanceID)
 	cloudConn, err := pvCloudConClient.Get(managedInfra.CloudConnectionID)
