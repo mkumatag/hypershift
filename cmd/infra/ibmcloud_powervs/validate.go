@@ -8,15 +8,22 @@ import (
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 )
 
-func validateCloudInstance(cloudInstanceID string) (*resourcecontrollerv2.ResourceInstance, error) {
+func validateCloudInstance(cloudInstance string) (resourceInstance *resourcecontrollerv2.ResourceInstance, err error) {
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{Authenticator: getIAMAuth()})
 	if err != nil {
 		return nil, err
 	}
 
-	resourceInstance, _, err := rcv2.GetResourceInstance(&resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
+	resourceInstanceL, _, err := rcv2.ListResourceInstances(&resourcecontrollerv2.ListResourceInstancesOptions{Name: &cloudInstance})
 	if err != nil {
 		return nil, err
+	}
+
+	for _, resource := range resourceInstanceL.Resources {
+		if *resource.Name == cloudInstance {
+			resourceInstance = &resource
+			break
+		}
 	}
 	if resourceInstance != nil && *resourceInstance.State != "active" {
 		return nil, fmt.Errorf("provided cloud instance id is not in active state, current state: %s", *resourceInstance.State)
@@ -90,49 +97,20 @@ func validateVpcLoadBalancer(option *CreateInfraOptions, v1 *vpcv1.VpcV1) (vpcLo
 }
 
 func validateCloudConnection(option *CreateInfraOptions, client *instance.IBMPICloudConnectionClient) (cloudConn *models.CloudConnection, err error) {
-	cloudConns, _ := client.GetAll()
-	for _, cloudConn := range cloudConns.CloudConnections {
-		if *cloudConn.Name == option.PowerVSCloudConnection {
-			return cloudConn, nil
+	cloudConnL, err := client.GetAll()
+	if err != nil {
+		return nil, err
+	}
+	for _, cc := range cloudConnL.CloudConnections {
+		if *cc.Name == option.PowerVSCloudConnection {
+			tmp := *cc
+			return &tmp, nil
 		}
 	}
 	return nil, fmt.Errorf("%s cloud connection not found", option.PowerVSCloudConnection)
 }
 
-/*
-func (managedInfra *ManagedInfra) validateCloudConnection(session *ibmpisession.IBMPISession, option *CreateInfraOptions) error {
-	pvCloudConClient := instance.NewIBMPICloudConnectionClient(context.Background(), session, option.CloudInstanceID)
-	cloudConn, err := pvCloudConClient.Get(managedInfra.CloudConnectionID)
-
-	if err != nil {
-		return fmt.Errorf("cloud connection: %s, error: %w", managedInfra.CloudConnectionID, err)
-	}
-
-	cloudConnVpc := map[string]bool{}
-	vpcEps := cloudConn.Vpc.Vpcs
-	for _, vpcEp := range vpcEps {
-		crn := strings.Split(*vpcEp.VpcID, ":")
-		cloudConnVpc[crn[len(crn)-1]] = true
-	}
-
-	for _, vpc := range managedInfra.Vpc {
-		if !cloudConnVpc[vpc.ID] {
-			return fmt.Errorf("cloud connection: %s, does not have %s vpc connection", managedInfra.CloudConnectionID, vpc.ID)
-		}
-	}
-
-	cloudConnPvSubnet := map[string]bool{}
-	for _, pvSubnet := range cloudConn.Networks {
-		cloudConnPvSubnet[*pvSubnet.NetworkID] = true
-	}
-
-	for _, pvSubnetId := range managedInfra.PowerVSPrivateSubnet {
-		if !cloudConnPvSubnet[pvSubnetId] {
-			return fmt.Errorf("cloud connection: %s, does not have %s powervs subnet", managedInfra.CloudConnectionID, pvSubnetId)
-		}
-	}
-
-	log.Log.Info("validated cloud connection", "id", managedInfra.CloudConnectionID)
-	return nil
+func validateDhcpServer(option *CreateInfraOptions, client *instance.IBMPIDhcpClient) (dhcpServer *models.DHCPServerDetail, err error) {
+	dhcpServer, err = client.Get(option.PowerVSDhcpServerID)
+	return dhcpServer, nil
 }
-*/
