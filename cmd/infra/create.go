@@ -4,6 +4,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/openshift/hypershift/cmd/infra/aws"
+	"github.com/openshift/hypershift/cmd/infra/azure"
+	"github.com/openshift/hypershift/cmd/infra/ibmcloud_powervs"
 )
 
 func NewCreateCommand() *cobra.Command {
@@ -14,6 +16,8 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(aws.NewCreateCommand())
+	cmd.AddCommand(azure.NewCreateCommand())
+	cmd.AddCommand(ibmcloud_powervs.NewCreateCommand())
 
 	return cmd
 }
