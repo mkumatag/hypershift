@@ -106,10 +106,10 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>InfraID is a globally unique identifier for the cluster. This identifier
 will be used to associate various cloud resources with the HostedCluster
 and its associated NodePools.</p>
-<p>TODO(dan): consider moving this to .platform.aws.infraID</p>
 </td>
 </tr>
 <tr>
@@ -1496,6 +1496,152 @@ toleration of full disruption of the component.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureNodePoolPlatform { #hypershift.openshift.io/v1alpha1.AzureNodePoolPlatform }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>vmsize</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePlatformSpec { #hypershift.openshift.io/v1alpha1.AzurePlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>credentials</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>location</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceGroup</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>vnetName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>vnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>subnetName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>subscriptionID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>machineIdentityID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>securityGroupName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
 ###ClusterAutoscaling { #hypershift.openshift.io/v1alpha1.ClusterAutoscaling }
 <p>
 (<em>Appears on:</em>
@@ -2114,10 +2260,10 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>InfraID is a globally unique identifier for the cluster. This identifier
 will be used to associate various cloud resources with the HostedCluster
 and its associated NodePools.</p>
-<p>TODO(dan): consider moving this to .platform.aws.infraID</p>
 </td>
 </tr>
 <tr>
@@ -3671,6 +3817,7 @@ PlatformType
 Value must be one of:
 &#34;AWS&#34;, 
 &#34;Agent&#34;, 
+&#34;Azure&#34;, 
 &#34;IBMCloud&#34;, 
 &#34;KubeVirt&#34;, 
 &#34;None&#34;
@@ -3730,6 +3877,18 @@ AgentNodePoolPlatform
 <td>
 <em>(Optional)</em>
 <p>Agent specifies the configuration used when using Agent platform.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azure</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AzureNodePoolPlatform">
+AzureNodePoolPlatform
+</a>
+</em>
+</td>
+<td>
 </td>
 </tr>
 </tbody>
@@ -4051,6 +4210,7 @@ PlatformType
 Value must be one of:
 &#34;AWS&#34;, 
 &#34;Agent&#34;, 
+&#34;Azure&#34;, 
 &#34;IBMCloud&#34;, 
 &#34;KubeVirt&#34;, 
 &#34;None&#34;
@@ -4098,6 +4258,19 @@ IBMCloudPlatformSpec
 <p>IBMCloud defines IBMCloud specific settings for components</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>azure</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AzurePlatformSpec">
+AzurePlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>Azure defines azure specific settings</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###PlatformType { #hypershift.openshift.io/v1alpha1.PlatformType }
@@ -4121,6 +4294,9 @@ IBMCloudPlatformSpec
 </td>
 </tr><tr><td><p>&#34;Agent&#34;</p></td>
 <td><p>AgentPlatform represents user supplied insfrastructure booted with agents.</p>
+</td>
+</tr><tr><td><p>&#34;Azure&#34;</p></td>
+<td><p>AzurePlatform represents Azure infrastructure.</p>
 </td>
 </tr><tr><td><p>&#34;IBMCloud&#34;</p></td>
 <td><p>IBMCloudPlatform represents IBM Cloud infrastructure.</p>

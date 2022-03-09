@@ -26,6 +26,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
 	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
+	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
 
@@ -59,4 +60,6 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	e2eutil.EnsureAPIBudget(t, ctx, client, hostedCluster)
+	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, client, hostedCluster)
 }

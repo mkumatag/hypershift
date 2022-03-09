@@ -18,6 +18,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 )
 
@@ -34,6 +35,7 @@ type CreateIAMOptions struct {
 	InfraID                         string
 	IssuerURL                       string
 	OutputFile                      string
+	KMSKeyARN                       string
 	AdditionalTags                  []string
 
 	additionalIAMTags []*iam.Tag
@@ -45,10 +47,12 @@ type CreateIAMOutput struct {
 	InfraID     string                       `json:"infraID"`
 	IssuerURL   string                       `json:"issuerURL"`
 	Roles       []hyperv1.AWSRoleCredentials `json:"roles"`
+	KMSKeyARN   string                       `json:"kmsKeyARN"`
 
 	KubeCloudControllerRoleARN  string `json:"kubeCloudControllerRoleARN"`
 	NodePoolManagementRoleARN   string `json:"nodePoolManagementRoleARN"`
 	ControlPlaneOperatorRoleARN string `json:"controlPlaneOperatorRoleARN"`
+	KMSProviderRoleARN          string `json:"kmsProviderRoleARN"`
 }
 
 func NewCreateIAMCommand() *cobra.Command {
@@ -73,6 +77,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.PublicZoneID, "public-zone-id", opts.PublicZoneID, "The id of the clusters public route53 zone")
 	cmd.Flags().StringVar(&opts.PrivateZoneID, "private-zone-id", opts.PrivateZoneID, "The id of the cluters private route53 zone")
 	cmd.Flags().StringVar(&opts.LocalZoneID, "local-zone-id", opts.LocalZoneID, "The id of the clusters local route53 zone")
+	cmd.Flags().StringVar(&opts.KMSKeyARN, "kms-key-arn", opts.KMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 
 	cmd.MarkFlagRequired("aws-creds")
@@ -85,7 +90,7 @@ func NewCreateIAMCommand() *cobra.Command {
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Run(cmd.Context(), util.GetClientOrDie()); err != nil {
-			log.Error(err, "Failed to create infrastructure")
+			log.Log.Error(err, "Failed to create infrastructure")
 			return err
 		}
 		return nil
@@ -149,10 +154,10 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	}
 
 	o.IssuerURL = oidcDiscoveryURL(o.OIDCStorageProviderS3BucketName, o.OIDCStorageProviderS3Region, o.InfraID)
-	log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
+	log.Log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
 
-	awsSession := awsutil.NewSession("cli-create-iam")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	awsSession := awsutil.NewSession("cli-create-iam", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)
 
 	results, err := o.CreateOIDCResources(iamClient)
@@ -161,11 +166,12 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	}
 	profileName := DefaultProfileName(o.InfraID)
 	results.ProfileName = profileName
+	results.KMSKeyARN = o.KMSKeyARN
 	err = o.CreateWorkerInstanceProfile(iamClient, profileName)
 	if err != nil {
 		return nil, err
 	}
-	log.Info("Created IAM profile", "name", profileName, "region", o.Region)
+	log.Log.Info("Created IAM profile", "name", profileName, "region", o.Region)
 
 	return results, nil
 }

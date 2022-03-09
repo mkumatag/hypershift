@@ -6,6 +6,7 @@ import (
 	"github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/infra/azure"
 	"github.com/openshift/hypershift/cmd/infra/ibmcloud_powervs"
+
 )
 
 func NewDestroyCommand() *cobra.Command {

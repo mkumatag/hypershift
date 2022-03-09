@@ -3,10 +3,12 @@ package platform
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/ibmcloud_powervs"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/agent"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/azure"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/ibmcloud"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/none"
@@ -27,31 +29,23 @@ type Platform interface {
 	// Implementations should use the given input and client to create and update the desired state of the
 	// platform infrastructure CAPI CR, which will then be referenced by the CAPI Cluster CR.
 	// TODO (alberto): Pass createOrUpdate construct instead of client.
-	ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
-		hcluster *hyperv1.HostedCluster,
-		controlPlaneNamespace string,
-		apiEndpoint hyperv1.APIEndpoint,
-	) (client.Object, error)
+	ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error)
 
 	// CAPIProviderDeploymentSpec is called during HostedCluster reconciliation prior to reconciling
 	// the CAPI provider Deployment.
 	// It should return a CAPI provider DeploymentSpec with the specific needs for a particular platform.
 	// E.g particular volumes and secrets for credentials, containers, etc.
-	CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string) (*appsv1.DeploymentSpec, error)
+	CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error)
 
 	// ReconcileCredentials is responsible for reconciling resources related to cloud credentials
 	// from the HostedCluster namespace into to the HostedControlPlaneNamespace. So they can be used by
 	// the Control Plane Operator.
-	ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
-		hcluster *hyperv1.HostedCluster,
-		controlPlaneNamespace string) error
+	ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error
 
 	// ReconcileSecretEncryption is responsible for reconciling resources related to secret encryption
 	// from the HostedCluster namespace into to the HostedControlPlaneNamespace. So they can be used by
 	// the Control Plane Operator if your platform supports KMS.
-	ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
-		hcluster *hyperv1.HostedCluster,
-		controlPlaneNamespace string) error
+	ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error
 
 	// CAPIProviderPolicyRules responsible to return list of policy rules are required to be used
 	// by the CAPI provider in order to manage the resources by this platform
@@ -59,11 +53,11 @@ type Platform interface {
 	CAPIProviderPolicyRules() []rbacv1.PolicyRule
 }
 
-func GetPlatform(hcluster *hyperv1.HostedCluster) (Platform, error) {
+func GetPlatform(hcluster *hyperv1.HostedCluster, availabilityProberImage string, tokenMinterImage string) (Platform, error) {
 	var platform Platform
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		platform = &aws.AWS{}
+		platform = aws.New(availabilityProberImage, tokenMinterImage)
 	case hyperv1.IBMCloudPlatform:
 		platform = &ibmcloud.IBMCloud{}
 	case hyperv1.NonePlatform:
@@ -72,6 +66,10 @@ func GetPlatform(hcluster *hyperv1.HostedCluster) (Platform, error) {
 		platform = &agent.Agent{}
 	case hyperv1.KubevirtPlatform:
 		platform = &kubevirt.Kubevirt{}
+	case hyperv1.AzurePlatform:
+		platform = &azure.Azure{}
+	case hyperv1.IBMCloudPowerVSPlatform:
+		platform = &ibmcloud_powervs.IBMCloudPowerVS{}
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}

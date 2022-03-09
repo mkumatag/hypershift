@@ -36,7 +36,7 @@ import (
 const (
 	defaultReleaseVersion    = "0.0.1-snapshot"
 	defaultKubernetesVersion = "0.0.1-snapshot-kubernetes"
-	konnectivityAgentImage   = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
+	konnectivityAgentImage   = "quay.io/basavarg013/konnectivity-agent:0.2"
 )
 
 func NewCommand() *cobra.Command {
@@ -213,24 +213,25 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 			Upstream:  upsert.New(o.enableCIDebugOutput),
 			APIReader: mgr.GetAPIReader(),
 		},
-		Config:              cpConfig,
-		TargetConfig:        cfg,
-		Manager:             mgr,
-		Namespace:           o.Namespace,
-		HCPName:             o.HostedControlPlaneName,
-		InitialCA:           string(o.initialCA),
-		ClusterSignerCA:     string(o.clusterSignerCA),
-		Controllers:         o.Controllers,
-		ControllerFuncs:     controllerFuncs,
-		Versions:            versions,
-		PlatformType:        hyperv1.PlatformType(o.platformType),
-		CPCluster:           cpCluster,
-		Logger:              ctrl.Log.WithName("hypershift-operator"),
-		ReleaseProvider:     releaseProvider,
-		KonnectivityAddress: o.KonnectivityAddress,
-		KonnectivityPort:    o.KonnectivityPort,
-		OAuthAddress:        o.OAuthAddress,
-		OAuthPort:           o.OAuthPort,
+		Config:                cpConfig,
+		TargetConfig:          cfg,
+		Manager:               mgr,
+		Namespace:             o.Namespace,
+		HCPName:               o.HostedControlPlaneName,
+		InitialCA:             string(o.initialCA),
+		ClusterSignerCA:       string(o.clusterSignerCA),
+		Controllers:           o.Controllers,
+		ControllerFuncs:       controllerFuncs,
+		Versions:              versions,
+		PlatformType:          hyperv1.PlatformType(o.platformType),
+		CPCluster:             cpCluster,
+		Logger:                ctrl.Log.WithName("hypershift-operator"),
+		ReleaseProvider:       releaseProvider,
+		KonnectivityAddress:   o.KonnectivityAddress,
+		KonnectivityPort:      o.KonnectivityPort,
+		OAuthAddress:          o.OAuthAddress,
+		OAuthPort:             o.OAuthPort,
+		OperateOnReleaseImage: os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 	}
 	return operatorConfig.Start(ctx)
 }

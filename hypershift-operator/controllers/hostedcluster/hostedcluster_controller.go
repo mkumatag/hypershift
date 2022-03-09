@@ -54,6 +54,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -69,6 +70,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
@@ -185,11 +187,6 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: nodePool.GetNamespace(), Name: nodePool.Spec.ClusterName}}}
 	}))
 
-	// Watch based on Routes capability
-	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
-		builder.Watches(&source.Kind{Type: &routev1.Route{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
-	}
-
 	// Set based on SCC capability
 	// When SCC is available (OpenShift), the container's security context and UID range is automatically set
 	// When SCC is not available (Kubernetes), we want to explicitly set a default (non-root) security context
@@ -253,24 +250,22 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
 		// Keep trying to delete until we know it's safe to finalize.
-		completed, err := r.delete(ctx, req, hcluster)
+		completed, err := r.delete(ctx, hcluster)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete cluster: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to delete hostedcluster: %w", err)
 		}
 		if !completed {
 			log.Info("hostedcluster is still deleting", "name", req.NamespacedName)
 			return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
 		}
-		log.Info("finished deleting hostedcluster", "name", req.NamespacedName)
 		// Now we can remove the finalizer.
 		if controllerutil.ContainsFinalizer(hcluster, finalizer) {
 			controllerutil.RemoveFinalizer(hcluster, finalizer)
 			if err := r.Update(ctx, hcluster); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
+				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
 			}
-			log.Info("hostedcluster was finalized", "name", req.NamespacedName)
-			return ctrl.Result{}, nil
 		}
+		log.Info("Deleted hostedcluster", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
 
@@ -397,7 +392,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			Type:               string(hyperv1.ValidHostedClusterConfiguration),
 			ObservedGeneration: hcluster.Generation,
 		}
-		if err := r.validateConfigAndClusterCapabilities(hcluster); err != nil {
+		if err := r.validateConfigAndClusterCapabilities(ctx, hcluster); err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
 			condition.Reason = hyperv1.InvalidConfigurationReason
@@ -564,6 +559,14 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Default the infraID if unset
+	if hcluster.Spec.InfraID == "" {
+		hcluster.Spec.InfraID = infraid.New(hcluster.Name)
+		if err := r.Update(ctx, hcluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update hostedcluster after defaulting the InfraID: %w", err)
+		}
+	}
+
 	// Set the infraID as Tag on all created AWS
 	if err := r.reconcileAWSResourceTags(ctx, hcluster); err != nil {
 		return ctrl.Result{}, err
@@ -602,7 +605,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile Platform specifics.
-	p, err := platform.GetPlatform(hcluster)
+	p, err := platform.GetPlatform(hcluster, r.AvailabilityProberImage, r.TokenMinterImage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -878,7 +881,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile CAPI Provider Deployment.
-	capiProviderDeploymentSpec, err := p.CAPIProviderDeploymentSpec(hcluster, r.TokenMinterImage)
+	capiProviderDeploymentSpec, err := p.CAPIProviderDeploymentSpec(hcluster, hcp)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1332,31 +1335,13 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		return fmt.Errorf("failed to reconcile controlplane operator service account: %w", err)
 	}
 
-	// Reconcile operator cluster role
-	controlPlaneOperatorClusterRole := controlplaneoperator.OperatorClusterRole()
-	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorClusterRole, func() error {
-		return reconcileControlPlaneOperatorClusterRole(controlPlaneOperatorClusterRole)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile controlplane operator cluster role: %w", err)
-	}
-
-	// Reconcile operator cluster role binding
-	controlPlaneOperatorClusterRoleBinding := controlplaneoperator.OperatorClusterRoleBinding(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorClusterRoleBinding, func() error {
-		return reconcileControlPlaneOperatorClusterRoleBinding(controlPlaneOperatorClusterRoleBinding, controlPlaneOperatorClusterRole, controlPlaneOperatorServiceAccount)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile controlplane operator clusterrolebinding: %w", err)
-	}
-
 	// Reconcile operator role
 	controlPlaneOperatorRole := controlplaneoperator.OperatorRole(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorRole, func() error {
 		return reconcileControlPlaneOperatorRole(controlPlaneOperatorRole)
 	})
 	if err != nil {
-		return fmt.Errorf("failed to reconcile controlplane operator clusterrole: %w", err)
+		return fmt.Errorf("failed to reconcile controlplane operator role: %w", err)
 	}
 
 	// Reconcile operator role binding
@@ -1366,6 +1351,44 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator rolebinding: %w", err)
+	}
+
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+		// Reconcile operator role - for ingress
+		controlPlaneOperatorIngressRole := controlplaneoperator.OperatorIngressRole("openshift-ingress", controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressRole, func() error {
+			return reconcileControlPlaneOperatorIngressRole(controlPlaneOperatorIngressRole)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile controlplane operator ingress role: %w", err)
+		}
+
+		// Reconcile operator role binding - for ingress
+		controlPlaneOperatorIngressRoleBinding := controlplaneoperator.OperatorIngressRoleBinding("openshift-ingress", controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressRoleBinding, func() error {
+			return reconcileControlPlaneOperatorIngressRoleBinding(controlPlaneOperatorIngressRoleBinding, controlPlaneOperatorIngressRole, controlPlaneOperatorServiceAccount)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile controlplane operator ingress rolebinding: %w", err)
+		}
+
+		// Reconcile operator role - for ingress operator
+		controlPlaneOperatorIngressOperatorRole := controlplaneoperator.OperatorIngressOperatorRole("openshift-ingress-operator", controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressOperatorRole, func() error {
+			return reconcilecontrolPlaneOperatorIngressOperatorRole(controlPlaneOperatorIngressOperatorRole)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile controlplane operator ingress operator role: %w", err)
+		}
+
+		// Reconcile operator role binding - for ingress operator
+		controlPlaneOperatorIngressOperatorRoleBinding := controlplaneoperator.OperatorIngressOperatorRoleBinding("openshift-ingress-operator", controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressOperatorRoleBinding, func() error {
+			return reconcilecontrolPlaneOperatorIngressOperatorRoleBinding(controlPlaneOperatorIngressOperatorRoleBinding, controlPlaneOperatorIngressOperatorRole, controlPlaneOperatorServiceAccount)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile controlplane operator ingress operator rolebinding: %w", err)
+		}
 	}
 
 	// Reconcile operator deployment
@@ -1383,7 +1406,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.AvailabilityProberImage, r.SocksProxyImage, r.TokenMinterImage, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()))
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.AvailabilityProberImage, r.SocksProxyImage, r.TokenMinterImage, r.SetDefaultSecurityContext, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()))
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1712,6 +1735,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 								"--cert-file", "/var/run/secrets/ignition/serving-cert/tls.crt",
 								"--key-file", "/var/run/secrets/ignition/serving-cert/tls.key",
 								"--registry-overrides", convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()),
+								"--platform", string(hcluster.Spec.Platform.Type),
 							},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
@@ -1891,19 +1915,13 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 		return hypershiftImage, nil
 	}
 
-	versionMajMin := fmt.Sprintf("%d.%d", version.Major, version.Minor)
-	pullSpec := "registry.ci.openshift.org/hypershift/hypershift"
-	switch versionMajMin {
-	case "4.9", "4.10":
-		return hypershiftOperatorImage, nil
-	case "4.8":
-		return fmt.Sprintf("%s:%s", pullSpec, versionMajMin), nil
-	default:
-		return "", fmt.Errorf("unsupported release image with version %s", versionMajMin)
+	if version.Minor < 9 {
+		return "", fmt.Errorf("unsupported release image with version %s", version.String())
 	}
+	return hypershiftOperatorImage, nil
 }
 
-func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, proberImage, socksImage, minterImage string, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
+func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, proberImage, socksImage, minterImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{
@@ -1934,10 +1952,10 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 									},
 								},
 							},
-						},
-						// needed since control plane operator runs with anyuuid scc
-						SecurityContext: &corev1.SecurityContext{
-							RunAsUser: k8sutilspointer.Int64Ptr(1000),
+							{
+								Name:  "OPERATE_ON_RELEASE_IMAGE",
+								Value: hc.Spec.Release.Image,
+							},
 						},
 						Command: []string{"/usr/bin/control-plane-operator"},
 						Args: []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator",
@@ -1975,6 +1993,12 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 							SuccessThreshold:    1,
 							FailureThreshold:    3,
 							TimeoutSeconds:      5,
+						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("44Mi"),
+								corev1.ResourceCPU:    resource.MustParse("1m"),
+							},
 						},
 					},
 				},
@@ -2039,6 +2063,12 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 				fmt.Sprintf("-kubeconfig-secret-namespace=%s", deployment.Namespace),
 				"-kubeconfig-secret-name=service-network-admin-kubeconfig",
 			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("10Mi"),
+				},
+			},
 			VolumeMounts: []corev1.VolumeMount{
 				{
 					Name:      "cloud-token",
@@ -2048,62 +2078,17 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 		})
 	}
 
+	// set security context
+	if setDefaultSecurityContext {
+		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: k8sutilspointer.Int64Ptr(config.DefaultSecurityContextUser),
+		}
+	}
+
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
-	return nil
-}
-
-func reconcileControlPlaneOperatorClusterRole(role *rbacv1.ClusterRole) error {
-	role.Rules = []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{"apiextensions.k8s.io"},
-			Resources: []string{"customresourcedefinitions"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"config.openshift.io"},
-			Resources: []string{"*"},
-			Verbs:     []string{"get", "list", "watch"},
-		},
-		{
-			APIGroups: []string{"operator.openshift.io"},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"security.openshift.io"},
-			Resources: []string{"securitycontextconstraints"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"rbac.authorization.k8s.io"},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{""},
-			Resources: []string{"services"},
-			Verbs:     []string{"get", "list", "watch"},
-		},
-	}
-	return nil
-}
-
-func reconcileControlPlaneOperatorClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, role *rbacv1.ClusterRole, sa *corev1.ServiceAccount) error {
-	binding.RoleRef = rbacv1.RoleRef{
-		APIGroup: "rbac.authorization.k8s.io",
-		Kind:     "ClusterRole",
-		Name:     role.Name,
-	}
-	binding.Subjects = []rbacv1.Subject{
-		{
-			Kind:      "ServiceAccount",
-			Name:      sa.Name,
-			Namespace: sa.Namespace,
-		},
-	}
 	return nil
 }
 
@@ -2127,6 +2112,11 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 				"monitoring.coreos.com",
 			},
 			Resources: []string{"*"},
+			Verbs:     []string{"*"},
+		},
+		{
+			APIGroups: []string{"rbac.authorization.k8s.io"},
+			Resources: []string{"roles", "rolebindings"},
 			Verbs:     []string{"*"},
 		},
 		{
@@ -2154,16 +2144,6 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			Verbs:     []string{"*"},
 		},
 		{
-			APIGroups: []string{"etcd.database.coreos.com"},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"machine.openshift.io"},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
 			APIGroups: []string{"batch"},
 			Resources: []string{"cronjobs", "jobs"},
 			Verbs:     []string{"*"},
@@ -2185,6 +2165,64 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 }
 
 func reconcileControlPlaneOperatorRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
+	binding.RoleRef = rbacv1.RoleRef{
+		APIGroup: "rbac.authorization.k8s.io",
+		Kind:     "Role",
+		Name:     role.Name,
+	}
+
+	binding.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      sa.Name,
+			Namespace: sa.Namespace,
+		},
+	}
+
+	return nil
+}
+
+func reconcileControlPlaneOperatorIngressRole(role *rbacv1.Role) error {
+	role.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"services"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
+	}
+	return nil
+}
+
+func reconcileControlPlaneOperatorIngressRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
+	binding.RoleRef = rbacv1.RoleRef{
+		APIGroup: "rbac.authorization.k8s.io",
+		Kind:     "Role",
+		Name:     role.Name,
+	}
+
+	binding.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      sa.Name,
+			Namespace: sa.Namespace,
+		},
+	}
+
+	return nil
+}
+
+func reconcilecontrolPlaneOperatorIngressOperatorRole(role *rbacv1.Role) error {
+	role.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{"operator.openshift.io"},
+			Resources: []string{"ingresscontrollers"},
+			Verbs:     []string{"*"},
+		},
+	}
+	return nil
+}
+
+func reconcilecontrolPlaneOperatorIngressOperatorRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
 	binding.RoleRef = rbacv1.RoleRef{
 		APIGroup: "rbac.authorization.k8s.io",
 		Kind:     "Role",
@@ -2879,12 +2917,9 @@ func computeUnmanagedEtcdAvailability(hcluster *hyperv1.HostedCluster, unmanaged
 	}
 }
 
-func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName string) ([]hyperv1.NodePool, error) {
+func listNodePools(ctx context.Context, c client.Client, clusterNamespace, clusterName string) ([]hyperv1.NodePool, error) {
 	nodePoolList := &hyperv1.NodePoolList{}
-	if err := r.Client.List(
-		context.TODO(),
-		nodePoolList,
-	); err != nil {
+	if err := c.List(ctx, nodePoolList); err != nil {
 		return nil, fmt.Errorf("failed getting nodePool list: %v", err)
 	}
 	// TODO: do a label association or something
@@ -2897,74 +2932,227 @@ func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName st
 	return filtered, nil
 }
 
-func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, hc *hyperv1.HostedCluster) (bool, error) {
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(req.Namespace, req.Name).Name
-	log := ctrl.LoggerFrom(ctx)
-
-	nodePools, err := r.listNodePools(req.Namespace, req.Name)
+func (r *HostedClusterReconciler) deleteNodePools(ctx context.Context, c client.Client, namespace, name string) error {
+	nodePools, err := listNodePools(ctx, c, namespace, name)
 	if err != nil {
-		return false, fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", req.Name, err)
+		return fmt.Errorf("failed to get NodePools by cluster name for cluster %q: %w", name, err)
 	}
-
-	for key := range nodePools {
-		if err := r.Delete(ctx, &nodePools[key]); err != nil && !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("failed to delete nodePool %q for cluster %q: %w", nodePools[key].GetName(), req.Name, err)
+	for key, nodePool := range nodePools {
+		if nodePool.DeletionTimestamp != nil {
+			continue
+		}
+		if err := c.Delete(ctx, &nodePools[key]); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete NodePool %q for cluster %q: %w", nodePool.GetName(), name, err)
 		}
 	}
+	return nil
+}
 
-	if hc != nil && len(hc.Spec.InfraID) > 0 {
-		log.Info("Deleting Cluster", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
-		cluster := &capiv1.Cluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      hc.Spec.InfraID,
-				Namespace: controlPlaneNamespace,
-			},
-		}
-
-		if err := r.Delete(ctx, cluster); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return false, fmt.Errorf("error deleting Cluster: %w", err)
-			}
-			// The advancing case is when Delete() returns an error that the cluster is not found
-		} else {
-			log.Info("Waiting for Cluster deletion", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
+func deleteCluster(ctx context.Context, c client.Client, cluster *capiv1.Cluster) (bool, error) {
+	err := c.Get(ctx, client.ObjectKeyFromObject(cluster), cluster)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
+		return false, fmt.Errorf("error getting Cluster: %w", err)
 	}
+	if cluster.DeletionTimestamp != nil {
+		return true, nil
+	}
+	err = c.Delete(ctx, cluster)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error deleting Cluster: %w", err)
+	}
+	return true, nil
+}
 
+func deleteAWSEndpointServices(ctx context.Context, c client.Client, namespace string) (bool, error) {
 	var awsEndpointServiceList hyperv1.AWSEndpointServiceList
-	if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: controlPlaneNamespace}); err != nil && !apierrors.IsNotFound(err) {
-		return false, fmt.Errorf("failed to list AWSEndpointServices for cluster %q: %w", req.Name, err)
+	if err := c.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: namespace}); err != nil && !apierrors.IsNotFound(err) {
+		return false, fmt.Errorf("error listing awsendpointservices in namespace %s: %w", namespace, err)
 	}
 	for _, ep := range awsEndpointServiceList.Items {
-		if err := r.Delete(ctx, &ep); err != nil && !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("failed to delete AWSEndpointService %q for cluster %q: %w", ep.Name, req.Name, err)
+		if ep.DeletionTimestamp != nil {
+			continue
+		}
+		if err := c.Delete(ctx, &ep); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("error deleting awsendpointservices %s in namespace %s: %w", ep.Name, namespace, err)
 		}
 	}
 	if len(awsEndpointServiceList.Items) != 0 {
 		// The CPO puts a finalizer on AWSEndpointService resources and should
 		// not be terminated until the resources are removed from the API server
-		log.Info("Waiting for AWS endpoint service list to be empty")
+		return true, nil
+	}
+	return false, nil
+}
+
+func deleteHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error getting HostedControlPlane: %w", err)
+	}
+	if hcp.DeletionTimestamp != nil {
+		return true, nil
+	}
+	err = c.Delete(ctx, hcp)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error deleting HostedControlPlane: %w", err)
+	}
+	return true, nil
+}
+
+func deleteNamespace(ctx context.Context, c client.Client, ns *corev1.Namespace) (bool, error) {
+	err := c.Get(ctx, client.ObjectKeyFromObject(ns), ns)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error getting Namespace: %w", err)
+	}
+	if ns.DeletionTimestamp != nil {
+		return true, nil
+	}
+	err = c.Delete(ctx, ns)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error deleting Namespace: %w", err)
+	}
+	return true, nil
+}
+
+func deleteControlPlaneOperatorRole(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
+	role := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "control-plane-operator-" + controlPlaneNamespace,
+			Namespace: rbacNamespace,
+		},
+	}
+	err := c.Get(ctx, client.ObjectKeyFromObject(role), role)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting Role: %w", err)
+	}
+	if role.DeletionTimestamp != nil {
+		return nil
+	}
+	err = c.Delete(ctx, role)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error deleting Role: %w", err)
+	}
+	return nil
+}
+
+func deleteControlPlaneOperatorRoleBinding(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
+	rolebinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "control-plane-operator-" + controlPlaneNamespace,
+			Namespace: rbacNamespace,
+		},
+	}
+	err := c.Get(ctx, client.ObjectKeyFromObject(rolebinding), rolebinding)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting RoleBinding: %w", err)
+	}
+	if rolebinding.DeletionTimestamp != nil {
+		return nil
+	}
+	err = c.Delete(ctx, rolebinding)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error deleting RoleBinding: %w", err)
+	}
+	return nil
+}
+
+func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
+	if err := deleteControlPlaneOperatorRole(ctx, c, rbacNamespace, controlPlaneNamespace); err != nil {
+		return err
+	}
+	if err := deleteControlPlaneOperatorRoleBinding(ctx, c, rbacNamespace, controlPlaneNamespace); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name).Name
+	log := ctrl.LoggerFrom(ctx)
+
+	err := r.deleteNodePools(ctx, r.Client, hc.Namespace, hc.Name)
+	if err != nil {
+		return false, err
+	}
+
+	if hc != nil && len(hc.Spec.InfraID) > 0 {
+		exists, err := deleteCluster(ctx, r.Client, &capiv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hc.Spec.InfraID,
+				Namespace: controlPlaneNamespace,
+			},
+		})
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			log.Info("Waiting for cluster deletion", "clusterName", hc.Spec.InfraID, "controlPlaneNamespace", controlPlaneNamespace)
+			return false, nil
+		}
+	}
+
+	exists, err := deleteAWSEndpointServices(ctx, r.Client, controlPlaneNamespace)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		log.Info("Waiting for awsendpointservice deletion", "controlPlaneNamespace", controlPlaneNamespace)
 		return false, nil
 	}
+
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+		err = deleteControlPlaneOperatorRBAC(ctx, r.Client, "openshift-ingress", controlPlaneNamespace)
+		if err != nil {
+			return false, fmt.Errorf("failed to clean up control plane operator ingress RBAC: %w", err)
+		}
+
+		err = deleteControlPlaneOperatorRBAC(ctx, r.Client, "openshift-ingress-operator", controlPlaneNamespace)
+		if err != nil {
+			return false, fmt.Errorf("failed to clean up control plane operator ingress operator RBAC: %w", err)
+		}
+	}
+
 	// There are scenarios where CAPI might not be operational e.g None Platform.
 	// We want to ensure the HCP resource is deleted before deleting the Namespace.
 	// Otherwise the CPO will be deleted leaving the HCP in a perpetual terminating state preventing further progress.
-	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name)
-	if err := r.Delete(ctx, hcp); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("error deleting HostedControlPlane %q in namespace %q: %w", hcp.Name, hcp.Namespace, err)
-		}
-	} else {
-		log.Info("Waiting for Hosted Control Plane deletion", "Name", hcp.Name, "Namespace", hcp.Namespace)
+	// NOTE: The advancing case is when Get() or Delete() returns an error that the HCP is not found
+	exists, err = deleteHostedControlPlane(ctx, r.Client, controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name))
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		log.Info("Waiting for hostedcontrolplane deletion", "controlPlaneNamespace", controlPlaneNamespace)
 		return false, nil
-	}
-	log.Info("Deleting controlplane namespace", "namespace", controlPlaneNamespace)
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: controlPlaneNamespace},
-	}
-	if err := r.Delete(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
-		return false, fmt.Errorf("failed to delete namespace: %w", err)
 	}
 
 	if err := r.cleanupOIDCBucketData(ctx, log, hc); err != nil {
@@ -2973,9 +3161,17 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 
 	// Block until the namespace is deleted, so that if a hostedcluster is deleted and then re-created with the same name
 	// we don't error initially because we can not create new content in a namespace that is being deleted.
-	if err := r.Get(ctx, client.ObjectKeyFromObject(ns), ns); err == nil || !apierrors.IsNotFound(err) {
-		return false, fmt.Errorf("failed to get namespace: %w", err)
+	exists, err = deleteNamespace(ctx, r.Client, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: controlPlaneNamespace},
+	})
+	if err != nil {
+		return false, err
 	}
+	if exists {
+		log.Info("Waiting for namespace deletion", "controlPlaneNamespace", controlPlaneNamespace)
+		return false, nil
+	}
+
 	return true, nil
 }
 
@@ -3194,13 +3390,46 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	return nil
 }
 
-func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(hc *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	var errs []error
 	for _, svc := range hc.Spec.Services {
 		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
-			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
+			errs = append(errs, fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service))
 		}
 	}
-	return nil
+
+	if err := r.validateAzureConfig(ctx, hc); err != nil {
+		errs = append(errs, err)
+	}
+
+	return utilerrors.NewAggregate(errs)
+}
+
+func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	if hc.Spec.Platform.Type != hyperv1.AzurePlatform {
+		return nil
+	}
+
+	if hc.Spec.Platform.Azure == nil {
+		return errors.New("azurecluster needs .spec.platform.azure to be filled")
+	}
+
+	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+		Namespace: hc.Namespace,
+		Name:      hc.Spec.Platform.Azure.Credentials.Name,
+	}}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+		return fmt.Errorf("failed to get credentials secret for cluster: %w", err)
+	}
+
+	var errs []error
+	for _, expectedKey := range []string{"AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID"} {
+		if _, found := credentialsSecret.Data[expectedKey]; !found {
+			errs = append(errs, fmt.Errorf("credentials secret for cluster doesn't have required key %s", expectedKey))
+		}
+	}
+
+	return utilerrors.NewAggregate(errs)
 }
 
 func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.HostedCluster) error {
@@ -3765,7 +3994,7 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
 	infraCR client.Object, namespace, clusterName, hcpNamespace string) error {
 
-	nodePools, err := r.listNodePools(namespace, clusterName)
+	nodePools, err := listNodePools(ctx, r.Client, namespace, clusterName)
 	if err != nil {
 		return fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", clusterName, err)
 	}
@@ -3797,21 +4026,5 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 	if err != nil {
 		return fmt.Errorf("failed to reconcile networks for CAPA Infra CR: %w", err)
 	}
-
-	// Reconcile subnet IDs in AWSEndpointService CRs
-	awsEndpointServiceList := hyperv1.AWSEndpointServiceList{}
-	if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
-		return fmt.Errorf("failed to list AWSEndpointServices in namespace %s: %w", hcpNamespace, err)
-	}
-	for _, eps := range awsEndpointServiceList.Items {
-		_, err = createOrUpdate(ctx, r.Client, &eps, func() error {
-			eps.Spec.SubnetIDs = subnetIDs
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("failed to reconcile subnetIDs for AWSEndpointService %s: %w", eps.Name, err)
-		}
-	}
-
 	return nil
 }

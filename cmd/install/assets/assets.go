@@ -19,6 +19,7 @@ import (
 //go:embed cluster-api-provider-ibmcloud/*
 //go:embed cluster-api-provider-kubevirt/*
 //go:embed cluster-api-provider-agent/*
+//go:embed cluster-api-provider-azure/*
 var crds embed.FS
 
 //go:embed recordingrules/*
@@ -33,7 +34,13 @@ var capiResources = map[string]string{
 	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml":                      "v1beta1",
 	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachines.yaml":                      "v1beta1",
 	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachinetemplates.yaml":              "v1beta1",
-	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcclusters.yaml":              "v1alpha4",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsclusters.yaml":          "v1beta1",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsmachines.yaml":          "v1beta1",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsimages.yaml":            "v1beta1",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsmachinetemplates.yaml":  "v1beta1",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcclusters.yaml":              "v1beta1",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcmachines.yaml":              "v1beta1",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcmachinetemplates.yaml":      "v1beta1",
 	"hypershift-operator/hypershift.openshift.io_hostedcontrolplanes.yaml":                           "v1alpha1",
 	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtclusters.yaml":            "v1alpha1",
 	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtmachines.yaml":            "v1alpha1",
@@ -41,6 +48,9 @@ var capiResources = map[string]string{
 	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentclusters.yaml":         "v1alpha1",
 	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentmachinetemplates.yaml": "v1alpha1",
 	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentmachines.yaml":         "v1alpha1",
+	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azureclusters.yaml":                  "v1beta1",
+	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachines.yaml":                  "v1beta1",
+	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachinetemplates.yaml":          "v1beta1",
 }
 
 func getContents(fs embed.FS, file string) []byte {

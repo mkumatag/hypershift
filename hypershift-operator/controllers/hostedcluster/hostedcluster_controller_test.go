@@ -2,6 +2,7 @@ package hostedcluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/upsert"
@@ -1201,16 +1203,7 @@ func TestReconcileAWSSubnets(t *testing.T) {
 		Spec: capiawsv1.AWSClusterSpec{},
 	}
 
-	epsName := "test"
-	awsEndpointService := &hyperv1.AWSEndpointService{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      epsName,
-			Namespace: hcpNamespace,
-		},
-		Spec: hyperv1.AWSEndpointServiceSpec{},
-	}
-
-	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(infraCR, nodePool, nodePool2, awsEndpointService).Build()
+	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(infraCR, nodePool, nodePool2).Build()
 	r := &HostedClusterReconciler{
 		Client:         client,
 		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
@@ -1236,13 +1229,99 @@ func TestReconcileAWSSubnets(t *testing.T) {
 			ID: "2",
 		},
 	}))
-
-	freshAWSEndpointService := &hyperv1.AWSEndpointService{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      epsName,
-			Namespace: hcpNamespace,
-		}}
-	err = client.Get(context.Background(), crclient.ObjectKeyFromObject(freshAWSEndpointService), freshAWSEndpointService)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(freshAWSEndpointService.Spec.SubnetIDs).To(BeEquivalentTo([]string{"1", "2"}))
 }
+
+func TestValidateConfigAndClusterCapabilities(t *testing.T) {
+	testCases := []struct {
+		name                          string
+		hostedCluster                 *hyperv1.HostedCluster
+		other                         []crclient.Object
+		managementClusterCapabilities capabilities.CapabiltyChecker
+		expectedResult                error
+	}{
+		{
+			name: "Cluster uses route but not supported, error",
+			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
+				Services: []hyperv1.ServicePublishingStrategyMapping{
+					{ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					}},
+				},
+			}},
+			managementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+			expectedResult:                errors.New(`cluster does not support Routes, but service "" is exposed via a Route`),
+		},
+		{
+			name: "Cluster uses routes and supported, success",
+			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
+				Services: []hyperv1.ServicePublishingStrategyMapping{
+					{ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					}},
+				},
+			}},
+			managementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		},
+		{
+			name: "Azurecluser with incomplete credentials secret, error",
+			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzurePlatformSpec{
+					Credentials: corev1.LocalObjectReference{Name: "creds"},
+				},
+			}}},
+			other: []crclient.Object{
+				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "creds"}},
+			},
+			expectedResult: errors.New(`[credentials secret for cluster doesn't have required key AZURE_CLIENT_ID, credentials secret for cluster doesn't have required key AZURE_CLIENT_SECRET, credentials secret for cluster doesn't have required key AZURE_SUBSCRIPTION_ID, credentials secret for cluster doesn't have required key AZURE_TENANT_ID]`),
+		},
+		{
+			name: "Azurecluster with complete credentials secret, success",
+			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzurePlatformSpec{
+					Credentials: corev1.LocalObjectReference{Name: "creds"},
+				},
+			}}},
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "creds"},
+					Data: map[string][]byte{
+						"AZURE_CLIENT_ID":       nil,
+						"AZURE_CLIENT_SECRET":   nil,
+						"AZURE_SUBSCRIPTION_ID": nil,
+						"AZURE_TENANT_ID":       nil,
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &HostedClusterReconciler{
+				Client:                        fake.NewClientBuilder().WithObjects(tc.other...).Build(),
+				ManagementClusterCapabilities: tc.managementClusterCapabilities,
+			}
+
+			ctx := context.Background()
+			actual := r.validateConfigAndClusterCapabilities(ctx, tc.hostedCluster)
+			if diff := cmp.Diff(actual, tc.expectedResult, equateErrorMessage); diff != "" {
+				t.Errorf("actual validation result differs from expected: %s", diff)
+			}
+		})
+	}
+}
+
+var equateErrorMessage = cmp.FilterValues(func(x, y interface{}) bool {
+	_, ok1 := x.(error)
+	_, ok2 := y.(error)
+	return ok1 && ok2
+}, cmp.Comparer(func(x, y interface{}) bool {
+	xe := x.(error)
+	ye := y.(error)
+	if xe == nil || ye == nil {
+		return xe == nil && ye == nil
+	}
+	return xe.Error() == ye.Error()
+}))

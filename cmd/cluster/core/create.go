@@ -23,6 +23,7 @@ import (
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -57,8 +58,16 @@ type CreateOptions struct {
 	KubevirtPlatform                 KubevirtPlatformCreateOptions
 	AWSPlatform                      AWSPlatformOptions
 	AgentPlatform                    AgentPlatformCreateOptions
+	AzurePlatform                    AzurePlatformOptions
+	IBMCloudPowerVSPlatform          IBMCloudPowerVSPlatformOptions
 	Wait                             bool
 	Timeout                          time.Duration
+}
+
+type IBMCloudPowerVSPlatformOptions struct {
+	APIKey     string
+	VPC        string
+	BaseDomain string
 }
 
 type AgentPlatformCreateOptions struct {
@@ -91,6 +100,13 @@ type AWSPlatformOptions struct {
 	RootVolumeType     string
 	EndpointAccess     string
 	Zones              []string
+	EtcdKMSKeyARN      string
+}
+
+type AzurePlatformOptions struct {
+	CredentialsFile string
+	Location        string
+	InstanceType    string
 }
 
 func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
@@ -208,11 +224,11 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 			if err != nil {
 				return fmt.Errorf("failed to apply object %q: %w", key, err)
 			}
-			log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
+			log.Log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
 		}
 
 		if waitForRollout {
-			log.Info("Waiting for cluster rollout")
+			log.Log.Info("Waiting for cluster rollout")
 			return wait.PollInfiniteWithContext(ctx, 30*time.Second, func(ctx context.Context) (bool, error) {
 				hostedCluster := hostedCluster.DeepCopy()
 				if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
@@ -220,7 +236,7 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 				}
 				rolledOut := len(hostedCluster.Status.Version.History) > 0 && hostedCluster.Status.Version.History[0].CompletionTime != nil
 				if !rolledOut {
-					log.Info("Cluster rollout not finished yet, checking again in 30 seconds...")
+					log.Log.Info("Cluster rollout not finished yet, checking again in 30 seconds...")
 				}
 				return rolledOut, nil
 			})
@@ -260,7 +276,7 @@ func GetAPIServerAddressByNode(ctx context.Context) (string, error) {
 	if apiServerAddress == "" {
 		return "", fmt.Errorf("node %q does not expose any IP addresses, this should not be possible", nodes.Items[0].Name)
 	}
-	log.Info(fmt.Sprintf("detected %q from node %q as external-api-server-address", apiServerAddress, nodes.Items[0].Name))
+	log.Log.Info(fmt.Sprintf("detected %q from node %q as external-api-server-address", apiServerAddress, nodes.Items[0].Name))
 	return apiServerAddress, nil
 }
 
@@ -283,6 +299,7 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 	if opts.Wait && opts.NodePoolReplicas < 1 {
 		return errors.New("--wait requires --node-pool-replicas > 0")
 	}
+
 	exampleOptions, err := createCommonFixture(opts)
 	if err != nil {
 		return err

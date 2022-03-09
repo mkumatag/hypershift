@@ -305,6 +305,36 @@ type NodePoolPlatform struct {
 	//
 	// +optional
 	Agent *AgentNodePoolPlatform `json:"agent,omitempty"`
+
+	Azure *AzureNodePoolPlatform `json:"azure,omitempty"`
+
+	// IBMCloudPowerVS specifies the configuration used when using IBMCloud PowerVS platform.
+	//
+	// +optional
+	IBMCloudPowerVS *IBMCloudPowerVSNodePoolPlatform `json:"ibmcloudpowervs,omitempty"`
+}
+
+// IBMCloudPowerVSNodePoolPlatform specifies the configuration of a NodePool when operating
+// on IBMCloud PowerVS platform.
+type IBMCloudPowerVSNodePoolPlatform struct {
+	// ServiceInstanceID is the ServiceInstance to use for control plane cloud resources.
+	ServiceInstanceID string `json:"serviceInstanceID"`
+
+	// Image used for deploying the nodes
+	// +optional
+	Image *IBMCloudPowerVSResourceReference `json:"image,omitempty"`
+
+	// StorageType for the image and nodes
+	// +optional
+	StorageType string `json:"storageType,omitempty"`
+
+	// Subnet is the subnet to use for control plane cloud resources.
+	//
+	// +optional
+	Subnet *IBMCloudPowerVSResourceReference `json:"subnet,omitempty"`
+
+	// DeletePolicy for the image
+	DeletePolicy string `json:"deletePolicy,omitempty"`
 }
 
 // KubevirtNodePoolPlatform specifies the configuration of a NodePool when operating
@@ -423,4 +453,9 @@ type AgentNodePoolPlatform struct {
 	// be selected for a Machine.
 	// +optional
 	AgentLabelSelector *metav1.LabelSelector `json:"agentLabelSelector,omitempty"`
+}
+
+type AzureNodePoolPlatform struct {
+	VMSize  string `json:"vmsize"`
+	ImageID string `json:"imageID"`
 }

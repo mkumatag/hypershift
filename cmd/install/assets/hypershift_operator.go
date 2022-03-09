@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -235,6 +236,12 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 									Name:          "metrics",
 									ContainerPort: 9000,
 									Protocol:      corev1.ProtocolTCP,
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("150Mi"),
+									corev1.ResourceCPU:    resource.MustParse("10m"),
 								},
 							},
 							VolumeMounts: oidcVolumeMount,
@@ -717,4 +724,220 @@ func (r HypershiftRecordingRule) Build() *prometheusoperatorv1.PrometheusRule {
 
 	rule.Spec = recordingRuleSpec()
 	return rule
+}
+
+type HyperShiftClientClusterRole struct{}
+
+func (o HyperShiftClientClusterRole) Build() *rbacv1.ClusterRole {
+	role := &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRole",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-client",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"hypershift.openshift.io"},
+				Resources: []string{"hostedclusters", "nodepools"},
+				Verbs:     []string{"*"},
+			},
+		},
+	}
+	return role
+}
+
+type HyperShiftClientServiceAccount struct {
+	Namespace *corev1.Namespace
+}
+
+func (o HyperShiftClientServiceAccount) Build() *corev1.ServiceAccount {
+	sa := &corev1.ServiceAccount{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ServiceAccount",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      "hypershift-client",
+		},
+	}
+	return sa
+}
+
+type HyperShiftClientClusterRoleBinding struct {
+	ClusterRole    *rbacv1.ClusterRole
+	ServiceAccount *corev1.ServiceAccount
+	GroupName      string
+}
+
+func (o HyperShiftClientClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
+	binding := &rbacv1.ClusterRoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRoleBinding",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-client",
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     o.ClusterRole.Name,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      o.ServiceAccount.Name,
+				Namespace: o.ServiceAccount.Namespace,
+			},
+			{
+				Kind:     "Group",
+				APIGroup: "rbac.authorization.k8s.io",
+				Name:     o.GroupName,
+			},
+		},
+	}
+	return binding
+}
+
+type HyperShiftReaderClusterRole struct{}
+
+func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
+	role := &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRole",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-readers",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"hypershift.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"config.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"apiextensions.k8s.io"},
+				Resources: []string{"customresourcedefinitions"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"networking.k8s.io"},
+				Resources: []string{"networkpolicies"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{
+					"bootstrap.cluster.x-k8s.io",
+					"controlplane.cluster.x-k8s.io",
+					"infrastructure.cluster.x-k8s.io",
+					"machines.cluster.x-k8s.io",
+					"exp.infrastructure.cluster.x-k8s.io",
+					"addons.cluster.x-k8s.io",
+					"exp.cluster.x-k8s.io",
+					"cluster.x-k8s.io",
+				},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"operator.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"route.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"security.openshift.io"},
+				Resources: []string{"securitycontextconstraints"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"rbac.authorization.k8s.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"events",
+					"configmaps",
+					"pods",
+					"pods/log",
+					"nodes",
+					"namespaces",
+					"serviceaccounts",
+					"services",
+				},
+				Verbs: []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"apps"},
+				Resources: []string{"deployments"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"etcd.database.coreos.com"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"machine.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"monitoring.coreos.com"},
+				Resources: []string{"podmonitors"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"capi-provider.agent-install.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+		},
+	}
+	return role
+}
+
+type HyperShiftReaderClusterRoleBinding struct {
+	ClusterRole *rbacv1.ClusterRole
+	GroupName   string
+}
+
+func (o HyperShiftReaderClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
+	binding := &rbacv1.ClusterRoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRoleBinding",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-readers",
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     o.ClusterRole.Name,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:     "Group",
+				APIGroup: "rbac.authorization.k8s.io",
+				Name:     o.GroupName,
+			},
+		},
+	}
+	return binding
 }

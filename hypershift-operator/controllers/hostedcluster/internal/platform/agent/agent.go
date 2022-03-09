@@ -54,7 +54,7 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 	return agentCluster, nil
 }
 
-func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string) (*appsv1.DeploymentSpec, error) {
+func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := imageCAPAgent
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIAgentProviderImage]; ok {
 		providerImage = override
@@ -172,6 +172,55 @@ func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, create
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile Agent RoleBinding: %w", err)
+	}
+
+	return p.reconcileClusterRole(ctx, c, createOrUpdate, controlPlaneNamespace)
+}
+
+func (p Agent) reconcileClusterRole(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+	controlPlaneNamespace string) error {
+
+	role := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: credentialsRBACName,
+		},
+	}
+	_, err := createOrUpdate(ctx, c, role, func() error {
+		role.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"cluster.open-cluster-management.io"},
+				Resources: []string{"managedclustersets/join"},
+				Verbs:     []string{"create"},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile Agent ClusterRole: %w", err)
+	}
+
+	roleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-%s", credentialsRBACName, controlPlaneNamespace),
+		},
+	}
+	_, err = createOrUpdate(ctx, c, roleBinding, func() error {
+		roleBinding.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "capi-provider",
+				Namespace: controlPlaneNamespace,
+			},
+		}
+		roleBinding.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     credentialsRBACName,
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile Agent ClusterRoleBinding: %w", err)
 	}
 	return nil
 }

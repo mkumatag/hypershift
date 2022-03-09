@@ -13,6 +13,7 @@ import (
 	jose "gopkg.in/square/go-jose.v2"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/log"
 )
 
 const (
@@ -304,6 +305,25 @@ func controlPlaneOperatorPolicy(hostedZone string) string {
 }`, hostedZone)
 }
 
+func kmsProviderPolicy(kmsKeyARN string) string {
+	return fmt.Sprintf(`{
+	"Version": "2012-10-17",
+	"Statement": [
+    	{
+			"Effect": "Allow",
+			"Action": [
+				"kms:Encrypt",
+				"kms:Decrypt",
+				"kms:ReEncrypt*",
+				"kms:GenerateDataKey*",
+				"kms:DescribeKey"
+			],
+			"Resource": %q
+		}
+	]
+}`, kmsKeyARN)
+}
+
 func ensureHostedZonePrefix(hostedZone string) string {
 	if !strings.HasPrefix(hostedZone, "hostedzone/") {
 		hostedZone = "hostedzone/" + hostedZone
@@ -341,10 +361,10 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 				OpenIDConnectProviderArn: provider.Arn,
 			})
 			if err != nil {
-				log.Error(err, "Failed to remove existing OIDC provider", "provider", *provider.Arn)
+				log.Log.Error(err, "Failed to remove existing OIDC provider", "provider", *provider.Arn)
 				return nil, err
 			}
-			log.Info("Removing existing OIDC provider", "provider", *provider.Arn)
+			log.Log.Info("Removing existing OIDC provider", "provider", *provider.Arn)
 			break
 		}
 	}
@@ -366,7 +386,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 	}
 
 	providerARN := *oidcOutput.OpenIDConnectProviderArn
-	log.Info("Created OIDC provider", "provider", providerARN)
+	log.Log.Info("Created OIDC provider", "provider", providerARN)
 
 	// TODO: The policies and secrets for these roles can be extracted from the
 	// release payload, avoiding this current hardcoding.
@@ -426,6 +446,15 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 	}
 	output.ControlPlaneOperatorRoleARN = arn
 
+	if len(o.KMSKeyARN) > 0 {
+		kmsProviderTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:kms-provider")
+		arn, err = o.CreateOIDCRole(iamClient, "kms-provider", kmsProviderTrustPolicy, kmsProviderPolicy(o.KMSKeyARN))
+		if err != nil {
+			return nil, err
+		}
+		output.KMSProviderRoleARN = arn
+	}
+
 	cloudNetworkConfigControllerTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:openshift-cloud-network-config-controller:cloud-network-config-controller")
 	arn, err = o.CreateOIDCRole(iamClient, "cloud-network-config-controller", cloudNetworkConfigControllerTrustPolicy, cloudNetworkConfigControllerPolicy)
 	if err != nil {
@@ -457,10 +486,10 @@ func (o *CreateIAMOptions) CreateOIDCRole(client iamiface.IAMAPI, name, trustPol
 		if err != nil {
 			return "", err
 		}
-		log.Info("Created role", "name", roleName)
+		log.Log.Info("Created role", "name", roleName)
 		arn = *output.Role.Arn
 	} else {
-		log.Info("Found existing role", "name", roleName)
+		log.Log.Info("Found existing role", "name", roleName)
 		arn = *role.Arn
 	}
 
@@ -478,7 +507,7 @@ func (o *CreateIAMOptions) CreateOIDCRole(client iamiface.IAMAPI, name, trustPol
 		if err != nil {
 			return "", err
 		}
-		log.Info("Created role policy", "name", rolePolicyName)
+		log.Log.Info("Created role policy", "name", rolePolicyName)
 	}
 
 	return arn, nil
@@ -528,9 +557,9 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		if err != nil {
 			return fmt.Errorf("cannot create worker role: %w", err)
 		}
-		log.Info("Created role", "name", roleName)
+		log.Log.Info("Created role", "name", roleName)
 	} else {
-		log.Info("Found existing role", "name", roleName)
+		log.Log.Info("Found existing role", "name", roleName)
 	}
 	instanceProfile, err := existingInstanceProfile(client, profileName)
 	if err != nil {
@@ -546,9 +575,9 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 			return fmt.Errorf("cannot create instance profile: %w", err)
 		}
 		instanceProfile = result.InstanceProfile
-		log.Info("Created instance profile", "name", profileName)
+		log.Log.Info("Created instance profile", "name", profileName)
 	} else {
-		log.Info("Found existing instance profile", "name", profileName)
+		log.Log.Info("Found existing instance profile", "name", profileName)
 	}
 	hasRole := false
 	for _, role := range instanceProfile.Roles {
@@ -564,7 +593,7 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		if err != nil {
 			return fmt.Errorf("cannot add role to instance profile: %w", err)
 		}
-		log.Info("Added role to instance profile", "role", roleName, "profile", profileName)
+		log.Log.Info("Added role to instance profile", "role", roleName, "profile", profileName)
 	}
 	rolePolicyName := fmt.Sprintf("%s-policy", profileName)
 	hasPolicy, err := existingRolePolicy(client, roleName, rolePolicyName)
@@ -580,7 +609,7 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		if err != nil {
 			return fmt.Errorf("cannot create profile policy: %w", err)
 		}
-		log.Info("Created role policy", "name", rolePolicyName)
+		log.Log.Info("Created role policy", "name", rolePolicyName)
 	}
 	return nil
 }

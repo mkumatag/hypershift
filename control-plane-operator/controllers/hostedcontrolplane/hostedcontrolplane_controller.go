@@ -32,6 +32,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/configoperator"
@@ -98,7 +99,8 @@ type HostedControlPlaneReconciler struct {
 	ReleaseProvider releaseinfo.Provider
 	HostedAPICache  hostedapicache.HostedAPICache
 	upsert.CreateOrUpdateProvider
-	EnableCIDebugOutput bool
+	EnableCIDebugOutput   bool
+	OperateOnReleaseImage string
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -163,6 +165,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err := r.Update(ctx, hostedControlPlane); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to hostedControlPlane: %w", err)
 		}
+	}
+
+	if r.OperateOnReleaseImage != "" && r.OperateOnReleaseImage != hostedControlPlane.Spec.ReleaseImage {
+		r.Log.Info("releaseImage is %s, but this operator is configured for %s, skipping reconciliation", hostedControlPlane.Spec.ReleaseImage, r.OperateOnReleaseImage)
+		return ctrl.Result{}, nil
 	}
 
 	// Reconcile global configuration validation status
@@ -612,7 +619,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	// Reconcile cluster version operator
-	r.Log.Info("Reonciling Cluster Version Operator")
+	r.Log.Info("Reconciling Cluster Version Operator")
 	if err = r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImage); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
 	}
@@ -1207,6 +1214,25 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile aws provider config: %w", err)
 		}
+	case hyperv1.AzurePlatform:
+		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+
+		// We need different configs for KAS/KCM and Kubelet in Nodes
+		cfg := manifests.AzureProviderConfig(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r, cfg, func() error {
+			return azure.ReconcileCloudConfig(cfg, hcp, credentialsSecret)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure cloud config: %w", err)
+		}
+		withSecrets := manifests.AzureProviderConfigWithCredentials(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r, withSecrets, func() error {
+			return azure.ReconcileCloudConfigWithCredentials(withSecrets, hcp, credentialsSecret)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure cloud config with credentials: %w", err)
+		}
 	}
 	return nil
 }
@@ -1735,7 +1761,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 }
 
 func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
-	p := ingressoperator.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+	p := ingressoperator.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext, hcp.Spec.Platform.Type)
 
 	kubeconfig := manifests.IngressOperatorKubeconfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, kubeconfig, func() error {
@@ -1906,9 +1932,11 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 	// Collect Profiles
 	collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
-	olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef)
-	if err := r.Create(ctx, collectProfilesConfigMap); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesConfigMap, func() error {
+		olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles config map: %w", err)
 	}
 
 	collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
@@ -1924,7 +1952,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		olm.ReconcileCollectProfilesRole(collectProfilesRole, p.OwnerRef)
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+		return fmt.Errorf("failed to reconcile collect profiles role: %w", err)
 	}
 
 	collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
@@ -1932,13 +1960,15 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		olm.ReconcileCollectProfilesRoleBinding(collectProfilesRoleBinding, p.OwnerRef)
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+		return fmt.Errorf("failed to reconcile collect profiles rolebinding: %w", err)
 	}
 
 	collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
-	olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef)
-	if err := r.Create(ctx, collectProfilesSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesSecret, func() error {
+		olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles secret: %w", err)
 	}
 
 	collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
@@ -1946,7 +1976,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		olm.ReconcileCollectProfilesServiceAccount(collectProfilesServiceAccount, p.OwnerRef)
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+		return fmt.Errorf("failed to reconcile collect profiles serviceaccount: %w", err)
 	}
 	return nil
 }
@@ -2090,7 +2120,7 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	deployment := manifests.ConfigOperatorDeployment(hcp.Namespace)
 	if _, err = r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort)
+		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort, hcp.Spec.ReleaseImage)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
 	}

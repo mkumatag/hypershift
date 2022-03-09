@@ -8,7 +8,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/agent"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
+	"github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/cluster/ibmcloud_powervs"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 )
@@ -65,6 +67,8 @@ func NewCreateCommands() *cobra.Command {
 	cmd.AddCommand(none.NewCreateCommand(opts))
 	cmd.AddCommand(agent.NewCreateCommand(opts))
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
+	cmd.AddCommand(azure.NewCreateCommand(opts))
+	cmd.AddCommand(ibmcloud_powervs.NewCreateCommand(opts))
 
 	return cmd
 }
@@ -93,6 +97,7 @@ func NewDestroyCommands() *cobra.Command {
 	cmd.AddCommand(none.NewDestroyCommand(opts))
 	cmd.AddCommand(agent.NewDestroyCommand(opts))
 	cmd.AddCommand(kubevirt.NewDestroyCommand(opts))
+	cmd.AddCommand(azure.NewDestroyCommand(opts))
 
 	return cmd
 }
