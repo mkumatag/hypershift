@@ -4,16 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/util/wait"
+
 	"github.com/IBM-Cloud/power-go-client/clients/instance"
 	"github.com/IBM-Cloud/power-go-client/ibmpisession"
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+
 	"github.com/openshift/hypershift/cmd/log"
-	"github.com/spf13/cobra"
-	"io/ioutil"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"strings"
-	"time"
 )
 
 const (

@@ -4,13 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"os"
 	"time"
 
 	"github.com/spf13/cobra"
-
-	"github.com/openshift/hypershift/cmd/log"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/IBM-Cloud/power-go-client/clients/instance"
 	"github.com/IBM-Cloud/power-go-client/ibmpisession"
@@ -22,6 +20,8 @@ import (
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 	"github.com/IBM/platform-services-go-sdk/resourcemanagerv2"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+
+	"github.com/openshift/hypershift/cmd/log"
 )
 
 var cloudApiKey = os.Getenv("IBMCLOUD_API_KEY")
@@ -78,8 +78,8 @@ type CreateInfraOptions struct {
 }
 
 type CreateStat struct {
-	Duration string `json:"duration"`
-	Status   string `json:"status"`
+	Duration time.Duration `json:"duration"`
+	Status   string        `json:"status"`
 }
 
 type InfraCreationStat struct {
@@ -128,7 +128,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Vpc, "vpc", opts.Vpc, "IBM Cloud VPC Name")
 	cmd.Flags().StringVar(&opts.PowerVSCloudConnection, "powervs-cloud-connection", opts.PowerVSCloudConnection, "IBM Cloud PowerVS Cloud Connection")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
-	cmd.Flags().BoolVar(&opts.Debug, "debug", opts.Debug, "Enabling this will result in debug logs gets printed")
+	cmd.Flags().BoolVar(&opts.Debug, "debug", opts.Debug, "Enabling this will print PowerVS API Request & Response logs")
 
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
@@ -160,7 +160,7 @@ func NewCreateCommand() *cobra.Command {
 func getEmptyStat() CreateStat {
 	return CreateStat{
 		Status:   "n/a",
-		Duration: "n/a",
+		Duration: 0,
 	}
 }
 
@@ -197,17 +197,6 @@ func (options *CreateInfraOptions) Run(ctx context.Context) (err error) {
 		if err != nil {
 			log.Log.WithName(options.InfraID).Error(err, "failed to write output infra json")
 		}
-
-		out = os.Stdout
-		outputBytes, err = json.MarshalIndent(infra.Stats, "", "  ")
-		if err != nil {
-			log.Log.WithName(options.InfraID).Error(err, "failed to serialize infra stats")
-		}
-		_, err = out.Write(outputBytes)
-		if err != nil {
-			log.Log.WithName(options.InfraID).Error(err, "failed to write infra stats json")
-		}
-
 	}()
 
 	return nil
@@ -511,7 +500,7 @@ func (infra *Infra) createCloudInstance(options *CreateInfraOptions) (resourceIn
 
 	err = wait.PollImmediate(pollingInterval, cloudInstanceCreationTimeout, f)
 
-	infra.Stats.CloudInstance.Duration = time.Since(startTime).Round(time.Second).String()
+	infra.Stats.CloudInstance.Duration = time.Since(startTime).Round(time.Second)
 
 	return resourceInstance, err
 }
@@ -636,7 +625,7 @@ func (infra *Infra) setupVpc(options *CreateInfraOptions, v1 *vpcv1.VpcV1) (err 
 // createVpc ...
 // creates a new vpc with the infra name or will return an existing vpc
 func (infra *Infra) createVpc(options *CreateInfraOptions, resourceGroupID string, v1 *vpcv1.VpcV1) (vpc *vpcv1.VPC, err error) {
-	var startTime *time.Time
+	var startTime time.Time
 	vpcName := fmt.Sprintf("%s-%s", options.InfraID, vpcNameSuffix)
 	vpc, err = validateVpc(vpcName, resourceGroupID, v1)
 
@@ -653,8 +642,7 @@ func (infra *Infra) createVpc(options *CreateInfraOptions, resourceGroupID strin
 			AddressPrefixManagement: &addressPrefixManagement,
 		}
 
-		timeNow := time.Now()
-		startTime = &timeNow
+		startTime = time.Now()
 		vpc, _, err = v1.CreateVPC(vpcOption)
 		if err != nil {
 			return nil, err
@@ -676,8 +664,8 @@ func (infra *Infra) createVpc(options *CreateInfraOptions, resourceGroupID strin
 
 	err = wait.PollImmediate(pollingInterval, vpcCreationTimeout, f)
 
-	if startTime != nil && vpc != nil {
-		infra.Stats.Vpc.Duration = time.Since(*startTime).Round(time.Second).String()
+	if !startTime.IsZero() && vpc != nil {
+		infra.Stats.Vpc.Duration = time.Since(startTime).Round(time.Second)
 	}
 
 	return vpc, err
@@ -748,7 +736,7 @@ func (infra *Infra) setupVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1)
 // creates a new subnet in vpc with the infra name or will return an existing subnet in the vpc
 func (infra *Infra) createVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1) (subnet *vpcv1.Subnet, err error) {
 	log.Log.WithName(options.InfraID).Info("Create VPC Subnet ...")
-	var startTime *time.Time
+	var startTime time.Time
 	vpcIdent := &vpcv1.VPCIdentity{CRN: &infra.VpcCrn}
 	resourceGroupIdent := &vpcv1.ResourceGroupIdentity{ID: &infra.ResourceGroupID}
 	subnetName := fmt.Sprintf("%s-%s", options.InfraID, vpcSubnetNameSuffix)
@@ -785,8 +773,7 @@ func (infra *Infra) createVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1
 			Ipv4CIDRBlock: ipv4CidrBlock,
 		}
 
-		timeNow := time.Now()
-		startTime = &timeNow
+		startTime = time.Now()
 		subnet, _, err = v1.CreateSubnet(&vpcv1.CreateSubnetOptions{SubnetPrototype: subnetProto})
 		if err != nil {
 			continue
@@ -810,8 +797,8 @@ func (infra *Infra) createVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1
 
 		err = wait.PollImmediate(pollingInterval, vpcCreationTimeout, f)
 
-		if startTime != nil {
-			infra.Stats.VpcSubnet.Duration = time.Since(*startTime).Round(time.Second).String()
+		if !startTime.IsZero() {
+			infra.Stats.VpcSubnet.Duration = time.Since(startTime).Round(time.Second)
 		}
 	}
 
@@ -971,7 +958,7 @@ func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *insta
 	err = wait.PollImmediate(pollingInterval, dhcpServerCreationTimeout, f)
 
 	if server != nil {
-		infra.Stats.DhcpService.Duration = time.Since(startTime).Round(time.Second).String()
+		infra.Stats.DhcpService.Duration = time.Since(startTime).Round(time.Second)
 	}
 	return server, err
 }
@@ -1065,7 +1052,7 @@ func (infra *Infra) isCloudConnectionReady(options *CreateInfraOptions, session 
 
 	err = wait.PollImmediate(pollingInterval, cloudConnEstablishedStateTimeout, f)
 	if cloudConn != nil {
-		infra.Stats.CloudConnState.Duration = time.Since(startTime).Round(time.Second).String()
+		infra.Stats.CloudConnState.Duration = time.Since(startTime).Round(time.Second)
 		infra.Stats.CloudConnState.Status = *cloudConn.LinkStatus
 	}
 	if err == nil {
