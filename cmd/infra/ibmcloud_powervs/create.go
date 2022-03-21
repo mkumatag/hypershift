@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -77,9 +78,26 @@ type CreateInfraOptions struct {
 	Debug                  bool
 }
 
+type timeDuration struct {
+	time.Duration
+}
+
+// MarshalJSON ...
+// custom marshaling func for time.Duration to parse Duration into user-friendly format
+func (d *timeDuration) MarshalJSON() (b []byte, err error) {
+	return []byte(fmt.Sprintf(`"%s"`, d.String())), nil
+}
+
+// UnmarshalJSON ...
+// custom unmarshalling func for time.Duration
+func (d *timeDuration) UnmarshalJSON(b []byte) (err error) {
+	d.Duration, err = time.ParseDuration(strings.Trim(string(b), `"`))
+	return
+}
+
 type CreateStat struct {
-	Duration time.Duration `json:"duration"`
-	Status   string        `json:"status"`
+	Duration timeDuration `json:"duration"`
+	Status   string       `json:"status,omitempty"`
 }
 
 type InfraCreationStat struct {
@@ -157,22 +175,8 @@ func NewCreateCommand() *cobra.Command {
 	return cmd
 }
 
-func getEmptyStat() CreateStat {
-	return CreateStat{
-		Status:   "n/a",
-		Duration: 0,
-	}
-}
-
 func (options *CreateInfraOptions) Run(ctx context.Context) (err error) {
-	infra := &Infra{ID: options.InfraID,
-		Stats: InfraCreationStat{
-			Vpc:            getEmptyStat(),
-			VpcSubnet:      getEmptyStat(),
-			CloudInstance:  getEmptyStat(),
-			DhcpService:    getEmptyStat(),
-			CloudConnState: getEmptyStat(),
-		}}
+	infra := &Infra{ID: options.InfraID}
 
 	err = infra.SetupInfra(options)
 	if err != nil {
@@ -500,7 +504,7 @@ func (infra *Infra) createCloudInstance(options *CreateInfraOptions) (resourceIn
 
 	err = wait.PollImmediate(pollingInterval, cloudInstanceCreationTimeout, f)
 
-	infra.Stats.CloudInstance.Duration = time.Since(startTime).Round(time.Second)
+	infra.Stats.CloudInstance.Duration.Duration = time.Since(startTime).Round(time.Second)
 
 	return resourceInstance, err
 }
@@ -665,7 +669,7 @@ func (infra *Infra) createVpc(options *CreateInfraOptions, resourceGroupID strin
 	err = wait.PollImmediate(pollingInterval, vpcCreationTimeout, f)
 
 	if !startTime.IsZero() && vpc != nil {
-		infra.Stats.Vpc.Duration = time.Since(startTime).Round(time.Second)
+		infra.Stats.Vpc.Duration.Duration = time.Since(startTime).Round(time.Second)
 	}
 
 	return vpc, err
@@ -798,7 +802,7 @@ func (infra *Infra) createVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1
 		err = wait.PollImmediate(pollingInterval, vpcCreationTimeout, f)
 
 		if !startTime.IsZero() {
-			infra.Stats.VpcSubnet.Duration = time.Since(startTime).Round(time.Second)
+			infra.Stats.VpcSubnet.Duration.Duration = time.Since(startTime).Round(time.Second)
 		}
 	}
 
@@ -813,7 +817,7 @@ func (infra *Infra) setupPowerVSCloudConnection(options *CreateInfraOptions, ses
 	var cloudConnID string
 	if options.PowerVSCloudConnection != "" {
 		log.Log.WithName(options.InfraID).Info("Validating PowerVS Cloud Connection", "name", options.PowerVSCloudConnection)
-		cloudConnID, err = validateCloudConnection(options.PowerVSCloudConnection, client)
+		cloudConnID, err = validateCloudConnectionByName(options.PowerVSCloudConnection, client)
 		if err != nil {
 			return err
 		}
@@ -841,7 +845,7 @@ func (infra *Infra) createCloudConnection(options *CreateInfraOptions, client *i
 	cloudConnName := fmt.Sprintf("%s-%s", options.InfraID, cloudConnNameSuffix)
 
 	// validating existing cloud connection with the infra
-	cloudConnID, err = validateCloudConnection(cloudConnName, client)
+	cloudConnID, err = validateCloudConnectionInPowerVSZone(cloudConnName, client)
 	if err != nil {
 		return "", err
 	} else if cloudConnID != "" {
@@ -958,7 +962,7 @@ func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *insta
 	err = wait.PollImmediate(pollingInterval, dhcpServerCreationTimeout, f)
 
 	if server != nil {
-		infra.Stats.DhcpService.Duration = time.Since(startTime).Round(time.Second)
+		infra.Stats.DhcpService.Duration.Duration = time.Since(startTime).Round(time.Second)
 	}
 	return server, err
 }
@@ -1052,7 +1056,7 @@ func (infra *Infra) isCloudConnectionReady(options *CreateInfraOptions, session 
 
 	err = wait.PollImmediate(pollingInterval, cloudConnEstablishedStateTimeout, f)
 	if cloudConn != nil {
-		infra.Stats.CloudConnState.Duration = time.Since(startTime).Round(time.Second)
+		infra.Stats.CloudConnState.Duration.Duration = time.Since(startTime).Round(time.Second)
 		infra.Stats.CloudConnState.Status = *cloudConn.LinkStatus
 	}
 	if err == nil {

@@ -125,7 +125,27 @@ func validateVpc(vpcName string, resourceGroupID string, v1 *vpcv1.VpcV1) (vpc *
 
 // validateCloudConnection ...
 // validates cloud connection's existence by name
-func validateCloudConnection(cloudConnName string, client *instance.IBMPICloudConnectionClient) (cloudConnID string, err error) {
+func validateCloudConnectionByName(cloudConnName string, client *instance.IBMPICloudConnectionClient) (cloudConnID string, err error) {
+	cloudConnL, err := client.GetAll()
+	if err != nil {
+		return "", err
+	}
+
+	if cloudConnL != nil {
+		for _, cc := range cloudConnL.CloudConnections {
+			if cc != nil && *cc.Name == cloudConnName {
+				return *cc.CloudConnectionID, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("%s cloud connection not found", cloudConnName)
+}
+
+// validateCloudConnectionInPowerVSZone ...
+// while creating a new cloud connection this func validates whether to create a new cloud connection
+// with respect to powervs zone's existing cloud connections
+func validateCloudConnectionInPowerVSZone(name string, client *instance.IBMPICloudConnectionClient) (cloudConnID string, err error) {
 	cloudConnL, err := client.GetAll()
 	if err != nil {
 		return "", err
@@ -133,11 +153,11 @@ func validateCloudConnection(cloudConnName string, client *instance.IBMPICloudCo
 
 	if cloudConnL != nil {
 		if len(cloudConnL.CloudConnections) == 2 {
-			return "", fmt.Errorf("Two Cloud connections per cloud instance iss not supported currently")
+			return "", fmt.Errorf("two cloud connections per powervs zone is not supported currently")
 		}
 
 		for _, cc := range cloudConnL.CloudConnections {
-			if cc != nil && *cc.Name == cloudConnName {
+			if cc != nil && *cc.Name == name {
 				cloudConnID = *cc.CloudConnectionID
 				break
 			}
@@ -147,10 +167,11 @@ func validateCloudConnection(cloudConnName string, client *instance.IBMPICloudCo
 			if cloudConnID != "" {
 				return cloudConnID, nil
 			} else {
-				return "", fmt.Errorf("given cloud connection not found or powervs zone has more than one cloud connection, make sure only one cloud connection present per PowerVS zone")
+				return "", fmt.Errorf("powervs zone has more than one cloud connection, make sure only one cloud connection present per powervs zone")
 			}
 		}
 	}
 
 	return "", nil
+
 }
