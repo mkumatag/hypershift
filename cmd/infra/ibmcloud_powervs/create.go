@@ -85,7 +85,7 @@ type timeDuration struct {
 // MarshalJSON ...
 // custom marshaling func for time.Duration to parse Duration into user-friendly format
 func (d *timeDuration) MarshalJSON() (b []byte, err error) {
-	return []byte(fmt.Sprintf(`"%s"`, d.String())), nil
+	return []byte(fmt.Sprintf(`"%s"`, d.Round(time.Millisecond).String())), nil
 }
 
 // UnmarshalJSON ...
@@ -269,7 +269,7 @@ func (infra *Infra) SetupInfra(options *CreateInfraOptions) (err error) {
 		return fmt.Errorf("cloud connection is not up: %w", err)
 	}
 
-	log.Log.WithName(options.InfraID).Info("Setup infra completed in", "duration", time.Since(startTime).Round(time.Second).String())
+	log.Log.WithName(options.InfraID).Info("Setup infra completed in", "duration", time.Since(startTime).String())
 	return nil
 }
 
@@ -504,7 +504,7 @@ func (infra *Infra) createCloudInstance(options *CreateInfraOptions) (resourceIn
 
 	err = wait.PollImmediate(pollingInterval, cloudInstanceCreationTimeout, f)
 
-	infra.Stats.CloudInstance.Duration.Duration = time.Since(startTime).Round(time.Second)
+	infra.Stats.CloudInstance.Duration.Duration = time.Since(startTime)
 
 	return resourceInstance, err
 }
@@ -669,7 +669,7 @@ func (infra *Infra) createVpc(options *CreateInfraOptions, resourceGroupID strin
 	err = wait.PollImmediate(pollingInterval, vpcCreationTimeout, f)
 
 	if !startTime.IsZero() && vpc != nil {
-		infra.Stats.Vpc.Duration.Duration = time.Since(startTime).Round(time.Second)
+		infra.Stats.Vpc.Duration.Duration = time.Since(startTime)
 	}
 
 	return vpc, err
@@ -802,7 +802,7 @@ func (infra *Infra) createVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1
 		err = wait.PollImmediate(pollingInterval, vpcCreationTimeout, f)
 
 		if !startTime.IsZero() {
-			infra.Stats.VpcSubnet.Duration.Duration = time.Since(startTime).Round(time.Second)
+			infra.Stats.VpcSubnet.Duration.Duration = time.Since(startTime)
 		}
 	}
 
@@ -962,7 +962,7 @@ func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *insta
 	err = wait.PollImmediate(pollingInterval, dhcpServerCreationTimeout, f)
 
 	if server != nil {
-		infra.Stats.DhcpService.Duration.Duration = time.Since(startTime).Round(time.Second)
+		infra.Stats.DhcpService.Duration.Duration = time.Since(startTime)
 	}
 	return server, err
 }
@@ -1056,7 +1056,7 @@ func (infra *Infra) isCloudConnectionReady(options *CreateInfraOptions, session 
 
 	err = wait.PollImmediate(pollingInterval, cloudConnEstablishedStateTimeout, f)
 	if cloudConn != nil {
-		infra.Stats.CloudConnState.Duration.Duration = time.Since(startTime).Round(time.Second)
+		infra.Stats.CloudConnState.Duration.Duration = time.Since(startTime)
 		infra.Stats.CloudConnState.Status = *cloudConn.LinkStatus
 	}
 	if err == nil {
