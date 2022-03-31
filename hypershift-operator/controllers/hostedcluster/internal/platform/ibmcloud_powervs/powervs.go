@@ -21,10 +21,15 @@ import (
 
 const (
 	// TODO(mkumatag): Move to OpenShift built image
-	imageCAPIBM = "gcr.io/k8s-staging-capi-ibmcloud/cluster-api-ibmcloud-controller:main"
+	imageCAPIBM = "k8s.gcr.io/capi-ibmcloud/cluster-api-ibmcloud-controller:v0.2.0"
 )
 
 type IBMCloudPowerVS struct {
+}
+
+func (p IBMCloudPowerVS) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	//TODO(mkumatag): implement me
+	return nil
 }
 
 func (p IBMCloudPowerVS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
@@ -152,7 +157,8 @@ func (p IBMCloudPowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedClus
 						},
 						Command: []string{"/manager"},
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
-							//TODO(mkumatag): Add the log level and stdtoerror post klogr support added.
+							"--alsologtostderr",
+							"--v=4",
 							"--leader-elect=true",
 						},
 						Ports: []corev1.ContainerPort{
