@@ -74,7 +74,7 @@ type ExampleOptions struct {
 	Agent                            *ExampleAgentOptions
 	Kubevirt                         *ExampleKubevirtOptions
 	Azure                            *ExampleAzureOptions
-	IBMCloudPowerVS                  *ExampleIBMCloudPowerVSOptions
+	PowerVS                          *ExamplePowerVSOptions
 	NetworkType                      hyperv1.NetworkType
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
 	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
@@ -386,7 +386,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		}
 		services = getIngressServicePublishingStrategyMapping()
 
-	case o.IBMCloudPowerVS != nil:
+	case o.PowerVS != nil:
 		buildIBMCloudCreds := func(name, apikey string) *corev1.Secret {
 			return &corev1.Secret{
 				TypeMeta: metav1.TypeMeta{
@@ -405,27 +405,27 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			}
 		}
-		powerVSResources := &ExampleIBMCloudPowerVSResources{
-			buildIBMCloudCreds(o.Name+"-cloud-ctrl-creds", o.IBMCloudPowerVS.ApiKey),
-			buildIBMCloudCreds(o.Name+"-node-mgmt-creds", o.IBMCloudPowerVS.ApiKey),
-			buildIBMCloudCreds(o.Name+"-cpo-creds", o.IBMCloudPowerVS.ApiKey),
+		powerVSResources := &ExamplePowerVSResources{
+			buildIBMCloudCreds(o.Name+"-cloud-ctrl-creds", o.PowerVS.ApiKey),
+			buildIBMCloudCreds(o.Name+"-node-mgmt-creds", o.PowerVS.ApiKey),
+			buildIBMCloudCreds(o.Name+"-cpo-creds", o.PowerVS.ApiKey),
 		}
 		resources = powerVSResources.AsObjects()
 		platformSpec = hyperv1.PlatformSpec{
-			Type: hyperv1.IBMCloudPowerVSPlatform,
-			IBMCloudPowerVS: &hyperv1.IBMCloudPowerVSPlatformSpec{
-				ResourceGroup:     o.IBMCloudPowerVS.ResourceGroup,
-				Region:            o.IBMCloudPowerVS.PowerVSRegion,
-				Zone:              o.IBMCloudPowerVS.PowerVSZone,
-				ServiceInstanceID: o.IBMCloudPowerVS.PowerVSCloudInstanceID,
-				VPC: &hyperv1.IBMCloudPowerVSVPC{
-					Name:   o.IBMCloudPowerVS.Vpc,
-					Region: o.IBMCloudPowerVS.VpcRegion,
-					Subnet: o.IBMCloudPowerVS.VpcSubnet,
+			Type: hyperv1.PowerVSPlatform,
+			PowerVS: &hyperv1.PowerVSPlatformSpec{
+				ResourceGroup:     o.PowerVS.ResourceGroup,
+				Region:            o.PowerVS.PowerVSRegion,
+				Zone:              o.PowerVS.PowerVSZone,
+				ServiceInstanceID: o.PowerVS.PowerVSCloudInstanceID,
+				VPC: &hyperv1.PowerVSVPC{
+					Name:   o.PowerVS.Vpc,
+					Region: o.PowerVS.VpcRegion,
+					Subnet: o.PowerVS.VpcSubnet,
 				},
-				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: powerVSResources.KubeCloudControllerIBMCloudPowerVSCreds.Name},
-				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: powerVSResources.NodePoolManagementIBMCloudPowerVSCreds.Name},
-				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: powerVSResources.ControlPlaneOperatorIBMCloudPowerVSCreds.Name},
+				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: powerVSResources.KubeCloudControllerPowerVSCreds.Name},
+				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: powerVSResources.NodePoolManagementPowerVSCreds.Name},
+				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: powerVSResources.ControlPlaneOperatorPowerVSCreds.Name},
 			},
 		}
 		services = []hyperv1.ServicePublishingStrategyMapping{
@@ -695,16 +695,16 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			}
 			nodePools = append(nodePools, nodePool)
 		}
-	case hyperv1.IBMCloudPowerVSPlatform:
+	case hyperv1.PowerVSPlatform:
 		nodePool := defaultNodePool(cluster.Name)
-		nodePool.Spec.Platform.IBMCloudPowerVS = &hyperv1.IBMCloudPowerVSNodePoolPlatform{
-			ServiceInstanceID: o.IBMCloudPowerVS.PowerVSCloudInstanceID,
-			SysType:           o.IBMCloudPowerVS.SysType,
-			ProcType:          o.IBMCloudPowerVS.ProcType,
-			Processors:        o.IBMCloudPowerVS.Processors,
-			Memory:            o.IBMCloudPowerVS.Memory,
-			Subnet: &hyperv1.IBMCloudPowerVSResourceReference{
-				ID: &o.IBMCloudPowerVS.PowerVSSubnetID,
+		nodePool.Spec.Platform.PowerVS = &hyperv1.PowerVSNodePoolPlatform{
+			ServiceInstanceID: o.PowerVS.PowerVSCloudInstanceID,
+			SysType:           o.PowerVS.SysType,
+			ProcType:          o.PowerVS.ProcType,
+			Processors:        o.PowerVS.Processors,
+			Memory:            o.PowerVS.Memory,
+			Subnet: &hyperv1.PowerVSResourceReference{
+				ID: &o.PowerVS.PowerVSSubnetID,
 			},
 		}
 		nodePools = append(nodePools, nodePool)

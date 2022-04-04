@@ -5,7 +5,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type ExampleIBMCloudPowerVSOptions struct {
+type ExamplePowerVSOptions struct {
 	ApiKey                 string
 	AccountID              string
 	ResourceGroup          string
@@ -25,22 +25,22 @@ type ExampleIBMCloudPowerVSOptions struct {
 	Memory     string
 }
 
-type ExampleIBMCloudPowerVSResources struct {
-	KubeCloudControllerIBMCloudPowerVSCreds  *corev1.Secret
-	NodePoolManagementIBMCloudPowerVSCreds   *corev1.Secret
-	ControlPlaneOperatorIBMCloudPowerVSCreds *corev1.Secret
+type ExamplePowerVSResources struct {
+	KubeCloudControllerPowerVSCreds  *corev1.Secret
+	NodePoolManagementPowerVSCreds   *corev1.Secret
+	ControlPlaneOperatorPowerVSCreds *corev1.Secret
 }
 
-func (o *ExampleIBMCloudPowerVSResources) AsObjects() []crclient.Object {
+func (o *ExamplePowerVSResources) AsObjects() []crclient.Object {
 	var objects []crclient.Object
-	if o.KubeCloudControllerIBMCloudPowerVSCreds != nil {
-		objects = append(objects, o.KubeCloudControllerIBMCloudPowerVSCreds)
+	if o.KubeCloudControllerPowerVSCreds != nil {
+		objects = append(objects, o.KubeCloudControllerPowerVSCreds)
 	}
-	if o.NodePoolManagementIBMCloudPowerVSCreds != nil {
-		objects = append(objects, o.NodePoolManagementIBMCloudPowerVSCreds)
+	if o.NodePoolManagementPowerVSCreds != nil {
+		objects = append(objects, o.NodePoolManagementPowerVSCreds)
 	}
-	if o.ControlPlaneOperatorIBMCloudPowerVSCreds != nil {
-		objects = append(objects, o.ControlPlaneOperatorIBMCloudPowerVSCreds)
+	if o.ControlPlaneOperatorPowerVSCreds != nil {
+		objects = append(objects, o.ControlPlaneOperatorPowerVSCreds)
 	}
 	return objects
 }

@@ -44,10 +44,10 @@ func getImageRegion(region string) string {
 func ibmPowerVSMachineTemplateSpec(nodePool *hyperv1.NodePool, ami string) *capipowervs.IBMPowerVSMachineTemplateSpec {
 	var image *capipowervs.IBMPowerVSResourceReference
 	var imageRef *v1.LocalObjectReference
-	if nodePool.Spec.Platform.IBMCloudPowerVS.Image != nil {
+	if nodePool.Spec.Platform.PowerVS.Image != nil {
 		image = &capipowervs.IBMPowerVSResourceReference{
-			ID:   nodePool.Spec.Platform.IBMCloudPowerVS.Image.ID,
-			Name: nodePool.Spec.Platform.IBMCloudPowerVS.Image.Name,
+			ID:   nodePool.Spec.Platform.PowerVS.Image.ID,
+			Name: nodePool.Spec.Platform.PowerVS.Image.Name,
 		}
 	} else {
 		imageRef = &v1.LocalObjectReference{
@@ -55,21 +55,21 @@ func ibmPowerVSMachineTemplateSpec(nodePool *hyperv1.NodePool, ami string) *capi
 		}
 	}
 	subnet := capipowervs.IBMPowerVSResourceReference{}
-	if nodePool.Spec.Platform.IBMCloudPowerVS.Subnet != nil {
-		subnet.ID = nodePool.Spec.Platform.IBMCloudPowerVS.Subnet.ID
-		subnet.Name = nodePool.Spec.Platform.IBMCloudPowerVS.Subnet.Name
+	if nodePool.Spec.Platform.PowerVS.Subnet != nil {
+		subnet.ID = nodePool.Spec.Platform.PowerVS.Subnet.ID
+		subnet.Name = nodePool.Spec.Platform.PowerVS.Subnet.Name
 	}
 	return &capipowervs.IBMPowerVSMachineTemplateSpec{
 		Template: capipowervs.IBMPowerVSMachineTemplateResource{
 			Spec: capipowervs.IBMPowerVSMachineSpec{
-				ServiceInstanceID: nodePool.Spec.Platform.IBMCloudPowerVS.ServiceInstanceID,
+				ServiceInstanceID: nodePool.Spec.Platform.PowerVS.ServiceInstanceID,
 				Image:             image,
 				ImageRef:          imageRef,
 				Network:           subnet,
-				SysType:           nodePool.Spec.Platform.IBMCloudPowerVS.SysType,
-				ProcType:          nodePool.Spec.Platform.IBMCloudPowerVS.ProcType,
-				Processors:        nodePool.Spec.Platform.IBMCloudPowerVS.Processors,
-				Memory:            nodePool.Spec.Platform.IBMCloudPowerVS.Memory,
+				SysType:           nodePool.Spec.Platform.PowerVS.SysType,
+				ProcType:          nodePool.Spec.Platform.PowerVS.ProcType,
+				Processors:        nodePool.Spec.Platform.PowerVS.Processors,
+				Memory:            nodePool.Spec.Platform.PowerVS.Memory,
 			},
 		},
 	}
@@ -78,12 +78,12 @@ func ibmPowerVSMachineTemplateSpec(nodePool *hyperv1.NodePool, ami string) *capi
 func ibmPowerVSImageSpec(powervsClusterName, region string, img *releaseinfo.CoreOSPowerVSImage, nodePool *hyperv1.NodePool) *capipowervs.IBMPowerVSImageSpec {
 	image := &capipowervs.IBMPowerVSImageSpec{
 		ClusterName:       powervsClusterName,
-		ServiceInstanceID: nodePool.Spec.Platform.IBMCloudPowerVS.ServiceInstanceID,
+		ServiceInstanceID: nodePool.Spec.Platform.PowerVS.ServiceInstanceID,
 		Bucket:            &img.Bucket,
 		Object:            &img.Object,
 		Region:            &region,
-		StorageType:       nodePool.Spec.Platform.IBMCloudPowerVS.StorageType,
-		DeletePolicy:      nodePool.Spec.Platform.IBMCloudPowerVS.DeletePolicy,
+		StorageType:       nodePool.Spec.Platform.PowerVS.StorageType,
+		DeletePolicy:      nodePool.Spec.Platform.PowerVS.DeletePolicy,
 	}
 	return image
 }

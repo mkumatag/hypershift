@@ -24,15 +24,15 @@ const (
 	imageCAPIBM = "k8s.gcr.io/capi-ibmcloud/cluster-api-ibmcloud-controller:v0.2.0"
 )
 
-type IBMCloudPowerVS struct {
+type PowerVS struct {
 }
 
-func (p IBMCloudPowerVS) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (p PowerVS) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	//TODO(mkumatag): implement me
 	return nil
 }
 
-func (p IBMCloudPowerVS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+func (p PowerVS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string,
 	apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
@@ -46,7 +46,7 @@ func (p IBMCloudPowerVS) ReconcileCAPIInfraCR(ctx context.Context, c client.Clie
 		},
 	}
 
-	ibmCluster.Spec.ServiceInstanceID = hcluster.Spec.Platform.IBMCloudPowerVS.ServiceInstanceID
+	ibmCluster.Spec.ServiceInstanceID = hcluster.Spec.Platform.PowerVS.ServiceInstanceID
 
 	_, err := createOrUpdate(ctx, c, ibmCluster, func() error {
 		ibmCluster.Annotations = map[string]string{
@@ -73,7 +73,7 @@ func (p IBMCloudPowerVS) ReconcileCAPIInfraCR(ctx context.Context, c client.Clie
 	return ibmCluster, nil
 }
 
-func (p IBMCloudPowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	defaultMode := int32(420)
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Template: corev1.PodTemplateSpec{
@@ -99,7 +99,7 @@ func (p IBMCloudPowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedClus
 						Name: "credentials",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName: hcluster.Spec.Platform.IBMCloudPowerVS.NodePoolManagementCreds.Name,
+								SecretName: hcluster.Spec.Platform.PowerVS.NodePoolManagementCreds.Name,
 							},
 						},
 					},
@@ -192,15 +192,15 @@ func (p IBMCloudPowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedClus
 	return deploymentSpec, nil
 }
 
-func (p IBMCloudPowerVS) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+func (p PowerVS) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
 	// Reconcile the platform provider cloud controller credentials secret by resolving
 	// the reference from the HostedCluster and syncing the secret in the control
 	// plane namespace.
 	var src corev1.Secret
-	if err := c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.IBMCloudPowerVS.KubeCloudControllerCreds.Name}, &src); err != nil {
-		return fmt.Errorf("failed to get cloud controller provider creds %s: %w", hcluster.Spec.Platform.IBMCloudPowerVS.KubeCloudControllerCreds.Name, err)
+	if err := c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.PowerVS.KubeCloudControllerCreds.Name}, &src); err != nil {
+		return fmt.Errorf("failed to get cloud controller provider creds %s: %w", hcluster.Spec.Platform.PowerVS.KubeCloudControllerCreds.Name, err)
 	}
 	dest := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -227,9 +227,9 @@ func (p IBMCloudPowerVS) ReconcileCredentials(ctx context.Context, c client.Clie
 	// Reconcile the platform provider node pool management credentials secret by
 	// resolving  the reference from the HostedCluster and syncing the secret in
 	// the control plane namespace.
-	err = c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.IBMCloudPowerVS.NodePoolManagementCreds.Name}, &src)
+	err = c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.PowerVS.NodePoolManagementCreds.Name}, &src)
 	if err != nil {
-		return fmt.Errorf("failed to get node pool provider creds %s: %w", hcluster.Spec.Platform.IBMCloudPowerVS.NodePoolManagementCreds.Name, err)
+		return fmt.Errorf("failed to get node pool provider creds %s: %w", hcluster.Spec.Platform.PowerVS.NodePoolManagementCreds.Name, err)
 	}
 	dest = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -256,9 +256,9 @@ func (p IBMCloudPowerVS) ReconcileCredentials(ctx context.Context, c client.Clie
 	// Reconcile the platform provider node pool management credentials secret by
 	// resolving  the reference from the HostedCluster and syncing the secret in
 	// the control plane namespace.
-	err = c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.IBMCloudPowerVS.ControlPlaneOperatorCreds.Name}, &src)
+	err = c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.PowerVS.ControlPlaneOperatorCreds.Name}, &src)
 	if err != nil {
-		return fmt.Errorf("failed to get control plane operator provider creds %s: %w", hcluster.Spec.Platform.IBMCloudPowerVS.ControlPlaneOperatorCreds.Name, err)
+		return fmt.Errorf("failed to get control plane operator provider creds %s: %w", hcluster.Spec.Platform.PowerVS.ControlPlaneOperatorCreds.Name, err)
 	}
 	dest = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -284,7 +284,7 @@ func (p IBMCloudPowerVS) ReconcileCredentials(ctx context.Context, c client.Clie
 	return nil
 }
 
-func (IBMCloudPowerVS) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+func (PowerVS) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
 	if hcluster.Spec.SecretEncryption.KMS.IBMCloud == nil {
@@ -322,6 +322,6 @@ func (IBMCloudPowerVS) ReconcileSecretEncryption(ctx context.Context, c client.C
 	return nil
 }
 
-func (IBMCloudPowerVS) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
+func (PowerVS) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }

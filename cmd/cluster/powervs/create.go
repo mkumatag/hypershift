@@ -1,4 +1,4 @@
-package ibmcloud_powervs
+package powervs
 
 import (
 	"context"
@@ -24,11 +24,11 @@ const (
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "powervs",
-		Short:        "Creates basic functional HostedCluster resources on IBMCloudPowerVS PowerVS",
+		Short:        "Creates basic functional HostedCluster resources on PowerVS PowerVS",
 		SilenceUsage: true,
 	}
 
-	opts.IBMCloudPowerVSPlatform = core.IBMCloudPowerVSPlatformOptions{
+	opts.PowerVSPlatform = core.PowerVSPlatformOptions{
 		APIKey:        os.Getenv("IBMCLOUD_API_KEY"),
 		PowerVSRegion: "us-south",
 		PowerVSZone:   "us-south",
@@ -39,17 +39,17 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		Memory:        "32",
 	}
 
-	cmd.Flags().StringVar(&opts.IBMCloudPowerVSPlatform.ResourceGroup, "resource-group", "", "IBM Cloud Resource group")
-	cmd.Flags().StringVar(&opts.IBMCloudPowerVSPlatform.PowerVSRegion, "powervs-region", opts.IBMCloudPowerVSPlatform.PowerVSRegion, "IBM Cloud PowerVS region")
-	cmd.Flags().StringVar(&opts.IBMCloudPowerVSPlatform.PowerVSZone, "powervs-zone", opts.IBMCloudPowerVSPlatform.PowerVSZone, "IBM Cloud PowerVS zone")
-	cmd.Flags().StringVar(&opts.IBMCloudPowerVSPlatform.PowerVSCloudInstanceID, "powervs-cloud-instance-id", "", "IBM PowerVS Cloud Instance ID")
-	cmd.Flags().StringVar(&opts.IBMCloudPowerVSPlatform.PowerVSCloudConnection, "powervs-cloud-connection", "", "IBM Cloud PowerVS Cloud Connection")
-	cmd.Flags().StringVar(&opts.IBMCloudPowerVSPlatform.VpcRegion, "vpc-region", opts.IBMCloudPowerVSPlatform.VpcRegion, "Name region")
-	cmd.Flags().StringVar(&opts.IBMCloudPowerVSPlatform.Vpc, "vpc", "", "Name Name")
-	cmd.Flags().StringVar(&opts.IBMCloudPowerVSPlatform.SysType, "sys-type", opts.IBMCloudPowerVSPlatform.SysType, "System type used to host the instance(e.g: s922, e980, e880)")
-	cmd.Flags().StringVar(&opts.IBMCloudPowerVSPlatform.ProcType, "proc-type", opts.IBMCloudPowerVSPlatform.ProcType, "Processor type (dedicated, shared, capped)")
-	cmd.Flags().StringVar(&opts.IBMCloudPowerVSPlatform.Processors, "processors", opts.IBMCloudPowerVSPlatform.Processors, "Number of processors allocated")
-	cmd.Flags().StringVar(&opts.IBMCloudPowerVSPlatform.Memory, "memory", opts.IBMCloudPowerVSPlatform.Memory, "Amount of memory allocated (in GB)")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.ResourceGroup, "resource-group", "", "IBM Cloud Resource group")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.PowerVSRegion, "powervs-region", opts.PowerVSPlatform.PowerVSRegion, "IBM Cloud PowerVS region")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.PowerVSZone, "powervs-zone", opts.PowerVSPlatform.PowerVSZone, "IBM Cloud PowerVS zone")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.PowerVSCloudInstanceID, "powervs-cloud-instance-id", "", "IBM PowerVS Cloud Instance ID")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.PowerVSCloudConnection, "powervs-cloud-connection", "", "IBM Cloud PowerVS Cloud Connection")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.VpcRegion, "vpc-region", opts.PowerVSPlatform.VpcRegion, "Name region")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.Vpc, "vpc", "", "Name Name")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.SysType, "sys-type", opts.PowerVSPlatform.SysType, "System type used to host the instance(e.g: s922, e980, e880)")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.ProcType, "proc-type", opts.PowerVSPlatform.ProcType, "Processor type (dedicated, shared, capped)")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.Processors, "processors", opts.PowerVSPlatform.Processors, "Number of processors allocated")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.Memory, "memory", opts.PowerVSPlatform.Memory, "Amount of memory allocated (in GB)")
 
 	cmd.MarkFlagRequired("resource-group")
 
@@ -100,7 +100,7 @@ func validate(opts *core.CreateOptions) error {
 		return fmt.Errorf("--base-domain can't be empty")
 	}
 
-	if opts.IBMCloudPowerVSPlatform.APIKey == "" {
+	if opts.PowerVSPlatform.APIKey == "" {
 		return fmt.Errorf("IBMCLOUD_API_KEY not set")
 	}
 	return nil
@@ -131,14 +131,14 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		}
 		opt := &powervsinfra.CreateInfraOptions{
 			BaseDomain:             opts.BaseDomain,
-			ResourceGroup:          opts.IBMCloudPowerVSPlatform.ResourceGroup,
+			ResourceGroup:          opts.PowerVSPlatform.ResourceGroup,
 			InfraID:                infraID,
-			PowerVSRegion:          opts.IBMCloudPowerVSPlatform.PowerVSRegion,
-			PowerVSZone:            opts.IBMCloudPowerVSPlatform.PowerVSZone,
-			PowerVSCloudInstanceID: opts.IBMCloudPowerVSPlatform.PowerVSCloudInstanceID,
-			PowerVSCloudConnection: opts.IBMCloudPowerVSPlatform.PowerVSCloudConnection,
-			VpcRegion:              opts.IBMCloudPowerVSPlatform.VpcRegion,
-			Vpc:                    opts.IBMCloudPowerVSPlatform.Vpc,
+			PowerVSRegion:          opts.PowerVSPlatform.PowerVSRegion,
+			PowerVSZone:            opts.PowerVSPlatform.PowerVSZone,
+			PowerVSCloudInstanceID: opts.PowerVSPlatform.PowerVSCloudInstanceID,
+			PowerVSCloudConnection: opts.PowerVSPlatform.PowerVSCloudConnection,
+			VpcRegion:              opts.PowerVSPlatform.VpcRegion,
+			Vpc:                    opts.PowerVSPlatform.Vpc,
 		}
 		infra = &powervsinfra.Infra{}
 		err = infra.SetupInfra(opt)
@@ -152,21 +152,21 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.PrivateZoneID = infra.CisDomainID
 	exampleOptions.PublicZoneID = infra.CisDomainID
 	exampleOptions.InfraID = infraID
-	exampleOptions.IBMCloudPowerVS = &apifixtures.ExampleIBMCloudPowerVSOptions{
-		ApiKey:                 opts.IBMCloudPowerVSPlatform.APIKey,
+	exampleOptions.PowerVS = &apifixtures.ExamplePowerVSOptions{
+		ApiKey:                 opts.PowerVSPlatform.APIKey,
 		AccountID:              infra.AccountID,
-		ResourceGroup:          opts.IBMCloudPowerVSPlatform.ResourceGroup,
-		PowerVSRegion:          opts.IBMCloudPowerVSPlatform.PowerVSRegion,
-		PowerVSZone:            opts.IBMCloudPowerVSPlatform.PowerVSZone,
+		ResourceGroup:          opts.PowerVSPlatform.ResourceGroup,
+		PowerVSRegion:          opts.PowerVSPlatform.PowerVSRegion,
+		PowerVSZone:            opts.PowerVSPlatform.PowerVSZone,
 		PowerVSCloudInstanceID: infra.PowerVSCloudInstanceID,
 		PowerVSSubnetID:        infra.PowerVSDhcpSubnetID,
-		VpcRegion:              opts.IBMCloudPowerVSPlatform.VpcRegion,
+		VpcRegion:              opts.PowerVSPlatform.VpcRegion,
 		Vpc:                    infra.VpcID,
 		VpcSubnet:              infra.VpcSubnetID,
-		SysType:                opts.IBMCloudPowerVSPlatform.SysType,
-		ProcType:               opts.IBMCloudPowerVSPlatform.ProcType,
-		Processors:             opts.IBMCloudPowerVSPlatform.Processors,
-		Memory:                 opts.IBMCloudPowerVSPlatform.Memory,
+		SysType:                opts.PowerVSPlatform.SysType,
+		ProcType:               opts.PowerVSPlatform.ProcType,
+		Processors:             opts.PowerVSPlatform.Processors,
+		Memory:                 opts.PowerVSPlatform.Memory,
 	}
 	return nil
 }
