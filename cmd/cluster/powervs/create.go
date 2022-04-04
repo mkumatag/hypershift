@@ -11,7 +11,7 @@ import (
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	powervsinfra "github.com/openshift/hypershift/cmd/infra/ibmcloud_powervs"
+	powervsinfra "github.com/openshift/hypershift/cmd/infra/powervs"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/spf13/cobra"

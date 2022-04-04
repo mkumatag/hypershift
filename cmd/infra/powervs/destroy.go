@@ -1,4 +1,4 @@
-package ibmcloud_powervs
+package powervs
 
 import (
 	"context"
