@@ -497,8 +497,8 @@ const (
 	// AzurePlatform represents Azure infrastructure.
 	AzurePlatform PlatformType = "Azure"
 
-	// IBMCloudPowerVSPlatform represents IBMCloudPowerVS infrastructure.
-	IBMCloudPowerVSPlatform PlatformType = "PowerVS"
+	// PowerVSPlatform represents PowerVS infrastructure.
+	PowerVSPlatform PlatformType = "PowerVS"
 )
 
 // PlatformSpec specifies the underlying infrastructure provider for the cluster
@@ -532,7 +532,7 @@ type PlatformSpec struct {
 	//
 	// +optional
 	// +immutable
-	IBMCloudPowerVS *IBMCloudPowerVSPlatformSpec `json:"ibmcloudpowervs,omitempty"`
+	PowerVS *PowerVSPlatformSpec `json:"powervs,omitempty"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.
@@ -547,8 +547,8 @@ type IBMCloudPlatformSpec struct {
 	ProviderType configv1.IBMCloudProviderType `json:"providerType,omitempty"`
 }
 
-// IBMCloudPowerVSPlatformSpec defines IBMCloud PowerVS specific settings for components
-type IBMCloudPowerVSPlatformSpec struct {
+// PowerVSPlatformSpec defines IBMCloud PowerVS specific settings for components
+type PowerVSPlatformSpec struct {
 	// ResourceGroup is the IBMCloud Resource Group in which the cluster resides. If not
 	// specified then default resource group of the account will be used.
 	//
@@ -571,7 +571,7 @@ type IBMCloudPowerVSPlatformSpec struct {
 	// Subnet is the subnet to use for control plane cloud resources.
 	//
 	// +optional
-	Subnet *IBMCloudPowerVSResourceReference `json:"subnet,omitempty"`
+	Subnet *PowerVSResourceReference `json:"subnet,omitempty"`
 
 	// ServiceInstanceID is the ServiceInstance to use for control plane cloud resources.
 	ServiceInstanceID string `json:"serviceInstanceID,omitempty"`
@@ -580,7 +580,7 @@ type IBMCloudPowerVSPlatformSpec struct {
 	// plane.
 	//
 	// +immutable
-	VPC *IBMCloudPowerVSVPC `json:"vpc,omitempty"`
+	VPC *PowerVSVPC `json:"vpc,omitempty"`
 
 	// KubeCloudControllerCreds is a reference to a secret containing cloud
 	// credentials with permissions matching the cloud controller policy. The
@@ -613,9 +613,9 @@ type IBMCloudPowerVSPlatformSpec struct {
 	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`
 }
 
-// IBMCloudPowerVSVPC specifies IBM Cloud PowerVS LoadBalancer configuration for the control
+// PowerVSVPC specifies IBM Cloud PowerVS LoadBalancer configuration for the control
 // plane.
-type IBMCloudPowerVSVPC struct {
+type PowerVSVPC struct {
 	// Name for VPC to used for all the service load balancer.
 	// +immutable
 	Name string `json:"name"`
@@ -639,10 +639,10 @@ type IBMCloudPowerVSVPC struct {
 	Subnet string `json:"subnet,omitempty"`
 }
 
-// IBMCloudPowerVSResourceReference is a reference to a specific IBMCloud PowerVS resource by ID, or Name.
+// PowerVSResourceReference is a reference to a specific IBMCloud PowerVS resource by ID, or Name.
 // Only one of ID, or Name may be specified. Specifying more than one will result in
 // a validation error.
-type IBMCloudPowerVSResourceReference struct {
+type PowerVSResourceReference struct {
 	// ID of resource
 	// +optional
 	ID *string `json:"id,omitempty"`

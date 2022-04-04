@@ -72,8 +72,8 @@ func GetPlatform(hcluster *hyperv1.HostedCluster, controlplaneOperatorImage stri
 		platform = &kubevirt.Kubevirt{}
 	case hyperv1.AzurePlatform:
 		platform = &azure.Azure{}
-	case hyperv1.IBMCloudPowerVSPlatform:
-		platform = &ibmcloud_powervs.IBMCloudPowerVS{}
+	case hyperv1.PowerVSPlatform:
+		platform = &ibmcloud_powervs.PowerVS{}
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}

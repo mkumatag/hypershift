@@ -1,4 +1,4 @@
-package ibmcloud_powervs
+package powervs
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	powervsinfra "github.com/openshift/hypershift/cmd/infra/ibmcloud_powervs"
+	powervsinfra "github.com/openshift/hypershift/cmd/infra/powervs"
 	"github.com/openshift/hypershift/cmd/log"
 )
 
@@ -49,10 +49,10 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 	}
 	if hostedCluster != nil {
 		o.InfraID = hostedCluster.Spec.InfraID
-		o.PowerVSPlatform.ResourceGroup = hostedCluster.Spec.Platform.IBMCloudPowerVS.ResourceGroup
-		o.PowerVSPlatform.Region = hostedCluster.Spec.Platform.IBMCloudPowerVS.Region
-		o.PowerVSPlatform.Zone = hostedCluster.Spec.Platform.IBMCloudPowerVS.Zone
-		o.PowerVSPlatform.VPCRegion = hostedCluster.Spec.Platform.IBMCloudPowerVS.VPC.Region
+		o.PowerVSPlatform.ResourceGroup = hostedCluster.Spec.Platform.PowerVS.ResourceGroup
+		o.PowerVSPlatform.Region = hostedCluster.Spec.Platform.PowerVS.Region
+		o.PowerVSPlatform.Zone = hostedCluster.Spec.Platform.PowerVS.Zone
+		o.PowerVSPlatform.VPCRegion = hostedCluster.Spec.Platform.PowerVS.VPC.Region
 	}
 
 	var inputErrors []error

@@ -343,8 +343,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			})
 			return ctrl.Result{}, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
 		}
-	} else if nodePool.Spec.Platform.Type == hyperv1.IBMCloudPowerVSPlatform {
-		powervsImage, _, err := getPowerVSImage(nodePool, hcluster.Spec.Platform.IBMCloudPowerVS.Region, releaseImage)
+	} else if nodePool.Spec.Platform.Type == hyperv1.PowerVSPlatform {
+		powervsImage, _, err := getPowerVSImage(nodePool, hcluster.Spec.Platform.PowerVS.Region, releaseImage)
 		if err != nil {
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidAMIConditionType,
@@ -516,8 +516,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Reconcile PowerVSImage only for the PowerVS platform
-	if nodePool.Spec.Platform.Type == hyperv1.IBMCloudPowerVSPlatform {
-		powervsImage, region, err := getPowerVSImage(nodePool, hcluster.Spec.Platform.IBMCloudPowerVS.Region, releaseImage)
+	if nodePool.Spec.Platform.Type == hyperv1.PowerVSPlatform {
+		powervsImage, region, err := getPowerVSImage(nodePool, hcluster.Spec.Platform.PowerVS.Region, releaseImage)
 
 		// Reconcile (Platform)MachineTemplate.
 		image, mutateImage, _, err := ibmPowerVSImageBuilder(hcluster, nodePool, infraID, region, powervsImage)
@@ -1467,7 +1467,7 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
                         return nil
                 }
 
-	case hyperv1.IBMCloudPowerVSPlatform:
+	case hyperv1.PowerVSPlatform:
 		template = &capipowervs.IBMPowerVSMachineTemplate{}
 		machineTemplateSpec = ibmPowerVSMachineTemplateSpec(nodePool, ami)
 		mutateTemplate = func(object client.Object) error {

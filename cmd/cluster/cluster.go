@@ -10,9 +10,9 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	powervs "github.com/openshift/hypershift/cmd/cluster/ibmcloud_powervs"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
+	powervs "github.com/openshift/hypershift/cmd/cluster/powervs"
 )
 
 func NewCreateCommands() *cobra.Command {

@@ -317,15 +317,15 @@ type NodePoolPlatform struct {
 
 	Azure *AzureNodePoolPlatform `json:"azure,omitempty"`
 
-	// IBMCloudPowerVS specifies the configuration used when using IBMCloud PowerVS platform.
+	// PowerVS specifies the configuration used when using IBMCloud PowerVS platform.
 	//
 	// +optional
-	IBMCloudPowerVS *IBMCloudPowerVSNodePoolPlatform `json:"ibmcloudpowervs,omitempty"`
+	PowerVS *PowerVSNodePoolPlatform `json:"powervs,omitempty"`
 }
 
-// IBMCloudPowerVSNodePoolPlatform specifies the configuration of a NodePool when operating
+// PowerVSNodePoolPlatform specifies the configuration of a NodePool when operating
 // on IBMCloud PowerVS platform.
-type IBMCloudPowerVSNodePoolPlatform struct {
+type PowerVSNodePoolPlatform struct {
 	// ServiceInstanceID is the ServiceInstance to use for control plane cloud resources.
 	ServiceInstanceID string `json:"serviceInstanceID"`
 
@@ -347,7 +347,7 @@ type IBMCloudPowerVSNodePoolPlatform struct {
 
 	// Image used for deploying the nodes
 	// +optional
-	Image *IBMCloudPowerVSResourceReference `json:"image,omitempty"`
+	Image *PowerVSResourceReference `json:"image,omitempty"`
 
 	// StorageType for the image and nodes
 	// +optional
@@ -356,7 +356,7 @@ type IBMCloudPowerVSNodePoolPlatform struct {
 	// Subnet is the subnet to use for control plane cloud resources.
 	//
 	// +optional
-	Subnet *IBMCloudPowerVSResourceReference `json:"subnet,omitempty"`
+	Subnet *PowerVSResourceReference `json:"subnet,omitempty"`
 
 	// DeletePolicy for the image
 	DeletePolicy string `json:"deletePolicy,omitempty"`
